@@ -10,7 +10,7 @@ O MediAgenda é um sistema web desenvolvido em PHP para o agendamento de consult
 
 ## Tecnologias Utilizadas
 * Backend: PHP
-* Banco de Dados: MySQL / MariaDB
+* Banco de Dados: MySQL
 * Frontend: HTML5, CSS3, e Bootstrap
 * Interatividade: JavaScript
 
