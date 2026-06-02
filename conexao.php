@@ -4,7 +4,7 @@
     $login_bd = "root";
     $password_bd = "";
     $nome_bd = "labdbprog2";
-    $port = 3307;
+    $port = 3306;
 
     $conexao_bd = mysqli_connect($host_bd, $login_bd, $password_bd,$nome_bd, $port);
 
