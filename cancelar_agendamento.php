@@ -10,84 +10,53 @@
                         ou { "sucesso": false, "mensagem": "..." }
 ============================================================ */
 
-// Garante que a resposta será sempre JSON
 header('Content-Type: application/json; charset=utf-8');
 
-/* ============================================================
-   VALIDAÇÃO DA REQUISIÇÃO
-============================================================ */
+// Validação de sessão
+session_start();
+if (!isset($_SESSION['cod_usuario'])) {
+    http_response_code(401);
+    echo json_encode(['sucesso' => false, 'mensagem' => 'Não autorizado.']);
+    exit;
+}
+
+// Validação do método
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode(array('sucesso' => false, 'mensagem' => 'Método não permitido.'));
+    echo json_encode(['sucesso' => false, 'mensagem' => 'Método não permitido.']);
     exit;
 }
 
+// Validação do ID
 $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
-
 if ($id <= 0) {
     http_response_code(400);
-    echo json_encode(array('sucesso' => false, 'mensagem' => 'ID inválido.'));
+    echo json_encode(['sucesso' => false, 'mensagem' => 'ID inválido.']);
     exit;
 }
 
-/* ============================================================
-   CONEXÃO COM O BANCO DE DADOS
-   TODO: Mover as credenciais para um arquivo de configuração
-         (ex: config.php) fora da pasta pública
+// Conexão com o banco
+require_once 'conexao.php';
 
-   Exemplo de config.php:
-   define('DB_HOST', 'localhost');
-   define('DB_NAME', 'mediagenda');
-   define('DB_USER', 'root');
-   define('DB_PASS', '');
-============================================================ */
+// Cancelamento via exclusão lógica (atualiza status para 'Cancelado')
+$stmt = $conexao_bd->prepare("UPDATE agendamentos SET status = 'Cancelado' WHERE id = ?");
 
-// require_once '../config.php';
+if (!$stmt) {
+    http_response_code(500);
+    echo json_encode(['sucesso' => false, 'mensagem' => 'Erro ao preparar a query: ' . $conexao_bd->error]);
+    exit;
+}
 
-// $conexao = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
-// $conexao->set_charset('utf8mb4');
+$stmt->bind_param('i', $id);
+$stmt->execute();
 
-// if ($conexao->connect_error) {
-//     http_response_code(500);
-//     echo json_encode(array('sucesso' => false, 'mensagem' => 'Erro de conexão com o banco.'));
-//     exit;
-// }
+if ($stmt->affected_rows === 0) {
+    http_response_code(404);
+    echo json_encode(['sucesso' => false, 'mensagem' => 'Agendamento não encontrado ou já cancelado.']);
+    $stmt->close();
+    exit;
+}
 
-/* ============================================================
-   CANCELAMENTO DO AGENDAMENTO
-   Utiliza exclusão lógica: atualiza o status para 'Cancelado'
-   em vez de remover o registro fisicamente da tabela.
+$stmt->close();
 
-   Para exclusão física, substitua o UPDATE por:
-   $sql = 'DELETE FROM agendamentos WHERE id = ?';
-============================================================ */
-
-// $sql  = "UPDATE agendamentos SET status = 'Cancelado' WHERE id = ?";
-// $stmt = $conexao->prepare($sql);
-
-// if (!$stmt) {
-//     http_response_code(500);
-//     echo json_encode(array('sucesso' => false, 'mensagem' => 'Erro ao preparar a query.'));
-//     $conexao->close();
-//     exit;
-// }
-
-// $stmt->bind_param('i', $id);
-// $stmt->execute();
-
-// if ($stmt->affected_rows === 0) {
-//     http_response_code(404);
-//     echo json_encode(array('sucesso' => false, 'mensagem' => 'Agendamento não encontrado.'));
-//     $stmt->close();
-//     $conexao->close();
-//     exit;
-// }
-
-// $stmt->close();
-// $conexao->close();
-
-/* ============================================================
-   RESPOSTA DE SUCESSO
-   TODO: remover este echo após descomentar o bloco acima
-============================================================ */
-echo json_encode(array('sucesso' => true));
+echo json_encode(['sucesso' => true]);

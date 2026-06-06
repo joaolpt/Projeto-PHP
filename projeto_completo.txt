@@ -1,0 +1,2146 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" 
+    content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Cadastro</title>
+</head>
+<body>
+    <h1>Cadastro</h1>
+    <?php
+        $name   = $_GET["name"];
+        $course = $_GET["course"];
+
+        echo "<h2>Olá $name!</h2><h3>Curso: $course</h3>";
+    ?>    
+    <ul>
+        <li><a href="index.php">Home</a></li>
+        <li>Cadastro</li>
+        <li>Relatórios</li>
+    </ul>
+    <hr>
+    <form action="cadastrobanco.php" method="POST">
+        <div>
+            <label for="usuario">Usuário:</label>
+            <input type="text" name="usuario" id="usuario"
+            placeholder="Usuário">
+        </div>
+        <div>
+        <label for="senha">Senha:</label>
+            <input type="password" name="senha" id="senha"
+            placeholder="Senha">
+        </div
+        <div>
+            <button type="submit">Enviar</button>
+        </div>
+    </form>
+</body>
+</html>
+<?php
+    require_once("conexao.php");// importar o conexao.php para esta página
+    $usuario = $_POST["usuario"];
+    $senha = $_POST["senha"];
+
+    /*
+    //abrir banco de dados:
+    $host_bd = "localhost";
+    $login_bd = "root";
+    $password_bd = "";
+    $nome_bd = "labdbprog2";
+    $port = 3307;*/
+
+    //zerar as sessões:
+    session_start();
+    $_SESSION["cod_usuario"] = "";
+    
+    //$conexao_bd = mysqli_connect($host_bd, $login_bd, $password_bd,$nome_bd, $port);
+    //$conectar = mysql_select_db($nome_bd, $conexao_bd);
+
+    //conferir se o usuário está preenchido
+    //conferir se a senha está preenchida
+    if(strlen($usuario) > 0 && strlen($senha) > 0){
+        $sql = "SELECT * FROM usuario WHERE username = '$usuario'";
+        
+        $result = mysqli_query($conexao_bd,$sql); //pega o resultado da query e lança num array
+        
+        if($consulta = mysqli_fetch_assoc($result)){ //leitura do array
+            $cod_usuario = $consulta['cod_usuario'];
+            $nome        = $consulta['nome'];
+            $password    = $consulta['pass'];
+            
+            if(
+                strtoupper(ltrim(rtrim($senha))) == 
+                strtoupper(ltrim(rtrim($password)))
+            ){
+                //usuário autenticado!
+                $_SESSION["cod_usuario"] = $cod_usuario;
+                header("location:principal.php");
+                //echo("Conectou!");
+            }else{
+                //usuário não autenticado
+                header("location:index.php");
+                //echo("Não conectou :(");
+            }
+        }else{
+            echo "‼ Não achei o usuário!!!";
+        }
+    }else{
+        echo "Não achei o usuário!!!";
+    }
+    //validar no banco de dados
+    //ir para página autenticada
+    //ou retornar para index
+    /*
+    echo "Cadastrar no banco o $usuario com a $senha <br>";
+
+    echo "<a href='index.php'>Retornar</a>";*/
+?>
+<?php
+/* ============================================================
+   cadastro_agendas.php
+   Módulo de Agendamentos — CRUD completo integrado ao banco
+============================================================ */
+
+session_start();
+require_once("conexao.php");
+
+// Verificação de sessão
+if (!isset($_SESSION['cod_usuario'])) {
+    header("Location: login.php");
+    exit;
+}
+
+// Dados do operador logado
+$cod_usuario  = $_SESSION['cod_usuario'];
+$nomeUsuario  = "";
+$emailUsuario = "";
+
+$sqlUser = "SELECT nome, email FROM usuario WHERE cod_usuario = ?";
+$stmtUser = $conexao_bd->prepare($sqlUser);
+$stmtUser->bind_param("i", $cod_usuario);
+$stmtUser->execute();
+$stmtUser->bind_result($nomeUsuario, $emailUsuario);
+$stmtUser->fetch();
+$stmtUser->close();
+
+$operadorNome  = $nomeUsuario;
+$operadorEmail = $emailUsuario;
+
+/* ============================================================
+   PROCESSAMENTO DE AÇÕES (POST)
+============================================================ */
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $acao = isset($_POST['acao']) ? $_POST['acao'] : '';
+
+    if ($acao === 'novo' || $acao === 'editar') {
+        $paciente     = trim($_POST['paciente']);
+        $medico_id    = (int)$_POST['medico_id'];
+        $esp_nome     = trim($_POST['especialidade']);
+        $data         = $_POST['data'];
+        $horario      = $_POST['horario'];
+        $status       = $_POST['status'];
+
+        // Busca o ID da especialidade pelo nome
+        $stmtEsp = $conexao_bd->prepare("SELECT id FROM especialidades WHERE nome = ? LIMIT 1");
+        $stmtEsp->bind_param("s", $esp_nome);
+        $stmtEsp->execute();
+        $resEsp = $stmtEsp->get_result();
+        $espRow = $resEsp->fetch_assoc();
+        $especialidade_id = $espRow ? (int)$espRow['id'] : 1;
+        $stmtEsp->close();
+
+        if ($acao === 'novo') {
+            $sql  = "INSERT INTO agendamentos (paciente, medico_id, especialidade_id, data, horario, status)
+                     VALUES (?, ?, ?, ?, ?, ?)";
+            $stmt = $conexao_bd->prepare($sql);
+            $stmt->bind_param("siisss", $paciente, $medico_id, $especialidade_id, $data, $horario, $status);
+            $stmt->execute();
+            $stmt->close();
+
+        } else { // editar
+            $id_agenda = (int)$_POST['id'];
+            $sql  = "UPDATE agendamentos
+                     SET paciente = ?, medico_id = ?, especialidade_id = ?, data = ?, horario = ?, status = ?
+                     WHERE id = ?";
+            $stmt = $conexao_bd->prepare($sql);
+            $stmt->bind_param("siisssi", $paciente, $medico_id, $especialidade_id, $data, $horario, $status, $id_agenda);
+            $stmt->execute();
+            $stmt->close();
+        }
+
+    } elseif ($acao === 'cancelar') {
+        $id_agenda = (int)$_POST['id'];
+        $stmt = $conexao_bd->prepare("UPDATE agendamentos SET status = 'Cancelado' WHERE id = ?");
+        $stmt->bind_param("i", $id_agenda);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    header("Location: cadastro_agendas.php");
+    exit;
+}
+
+/* ============================================================
+   LISTAGEM COM FILTROS (usando prepared statements p/ segurança)
+============================================================ */
+$agendamentos = [];
+
+$filtroPaciente = trim(isset($_GET['paciente']) ? $_GET['paciente'] : '');
+$filtroMedico   = trim(isset($_GET['medico'])   ? $_GET['medico']   : '');
+$filtroStatus   = trim(isset($_GET['status'])   ? $_GET['status']   : '');
+$filtroDataIni  = trim(isset($_GET['data_ini']) ? $_GET['data_ini'] : '');
+$filtroDataFim  = trim(isset($_GET['data_fim']) ? $_GET['data_fim'] : '');
+
+// Monta query dinamicamente com bind seguro
+$sql    = "SELECT * FROM vw_agendamentos WHERE 1=1";
+$tipos  = "";
+$params = [];
+
+if ($filtroPaciente !== '') {
+    $sql    .= " AND paciente LIKE ?";
+    $tipos  .= "s";
+    $params[] = "%$filtroPaciente%";
+}
+if ($filtroMedico !== '') {
+    $sql    .= " AND medico = ?";
+    $tipos  .= "s";
+    $params[] = $filtroMedico;
+}
+if ($filtroStatus !== '') {
+    $sql    .= " AND status = ?";
+    $tipos  .= "s";
+    $params[] = $filtroStatus;
+}
+if ($filtroDataIni !== '') {
+    $sql    .= " AND data >= ?";
+    $tipos  .= "s";
+    $params[] = $filtroDataIni;
+}
+if ($filtroDataFim !== '') {
+    $sql    .= " AND data <= ?";
+    $tipos  .= "s";
+    $params[] = $filtroDataFim;
+}
+
+$sql .= " ORDER BY data ASC, horario ASC";
+
+$stmt = $conexao_bd->prepare($sql);
+if ($tipos !== '') {
+    $stmt->bind_param($tipos, ...$params);
+}
+$stmt->execute();
+$result = $stmt->get_result();
+while ($row = $result->fetch_assoc()) {
+    $agendamentos[] = $row;
+}
+$stmt->close();
+
+// Lista de médicos para o filtro
+$medicos = [];
+$resMed  = mysqli_query($conexao_bd, "SELECT id, nome FROM medicos WHERE status = 'Ativo' ORDER BY nome");
+while ($row = mysqli_fetch_assoc($resMed)) {
+    $medicos[] = $row;
+}
+?>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediAgenda - Cadastro de Agendas</title>
+    <link rel="icon" type="image/x-icon" href="img/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --azul-primario: #0d6efd;
+            --azul-escuro:   #084298;
+            --azul-claro:    #e7f1ff;
+            --cinza-fundo:   #f5f7fa;
+            --cinza-borda:   #e3e6ea;
+            --texto-escuro:  #1f2d3d;
+            --sidebar-larg:  250px;
+        }
+        body { background-color: var(--cinza-fundo); font-family: 'Segoe UI', Tahoma, sans-serif; color: var(--texto-escuro); overflow-x: hidden; }
+
+        /* NAVBAR */
+        .navbar-topo { background: linear-gradient(90deg, var(--azul-primario) 0%, var(--azul-escuro) 100%); height: 60px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: fixed; top: 0; left: 0; right: 0; z-index: 1030; }
+        .navbar-topo .navbar-brand { color: #fff; font-weight: 600; font-size: 1.25rem; }
+        .navbar-topo .navbar-brand i { margin-right: 8px; }
+        .btn-sanduiche { background: transparent; border: none; color: #fff; font-size: 1.3rem; padding: 6px 12px; border-radius: 6px; transition: background 0.2s; }
+        .btn-sanduiche:hover { background: rgba(255,255,255,0.15); }
+        .operador-toggle { background: transparent; border: none; color: #fff; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 30px; transition: background 0.2s; }
+        .operador-toggle:hover, .operador-toggle:focus { background: rgba(255,255,255,0.15); color: #fff; }
+        .operador-toggle i.fa-circle-user { font-size: 1.6rem; }
+        .dropdown-menu-operador { min-width: 220px; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); border: none; }
+        .dropdown-menu-operador .dropdown-item i { width: 22px; color: var(--azul-primario); }
+
+        /* SIDEBAR */
+        .sidebar { position: fixed; top: 60px; left: 0; width: var(--sidebar-larg); height: calc(100vh - 60px); background: #fff; border-right: 1px solid var(--cinza-borda); padding: 20px 0; transition: transform 0.3s ease; z-index: 1020; overflow-y: auto; }
+        .sidebar.oculta { transform: translateX(calc(var(--sidebar-larg) * -1)); }
+        .sidebar .nav-link { color: var(--texto-escuro); padding: 12px 20px; border-left: 3px solid transparent; transition: all 0.2s; display: flex; align-items: center; gap: 12px; }
+        .sidebar .nav-link i { width: 22px; color: var(--azul-primario); font-size: 1.05rem; }
+        .sidebar .nav-link:hover { background: var(--azul-claro); border-left-color: var(--azul-primario); color: var(--azul-escuro); }
+        .sidebar .nav-link.ativo { background: var(--azul-claro); border-left-color: var(--azul-primario); color: var(--azul-escuro); font-weight: 600; }
+        .sidebar-overlay { display: none; position: fixed; top: 60px; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 1010; }
+        .sidebar-overlay.ativo { display: block; }
+
+        /* CONTEÚDO */
+        .conteudo-principal { margin-top: 60px; margin-left: var(--sidebar-larg); padding: 25px; transition: margin-left 0.3s ease; min-height: calc(100vh - 60px); }
+        .conteudo-principal.expandido { margin-left: 0; }
+        @media (max-width: 991.98px) {
+            .sidebar { transform: translateX(calc(var(--sidebar-larg) * -1)); }
+            .sidebar.aberta { transform: translateX(0); box-shadow: 2px 0 12px rgba(0,0,0,0.15); }
+            .conteudo-principal { margin-left: 0; }
+        }
+
+        /* CABEÇALHO */
+        .page-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+        .page-header h2 { font-size: 1.4rem; font-weight: 700; color: var(--azul-escuro); margin: 0; display: flex; align-items: center; gap: 10px; }
+        .page-header h2 i { color: var(--azul-primario); }
+
+        /* CARD */
+        .card-pagina { background: #fff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid var(--cinza-borda); padding: 20px 24px; margin-bottom: 20px; }
+        .card-pagina .card-titulo { font-weight: 600; font-size: 0.95rem; color: var(--azul-escuro); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .card-pagina .card-titulo i { color: var(--azul-primario); }
+
+        /* TABELA */
+        .tabela-agendamentos { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.88rem; }
+        .tabela-agendamentos thead th { background: var(--azul-claro); color: var(--azul-escuro); font-weight: 600; padding: 10px 14px; border-bottom: 2px solid var(--cinza-borda); white-space: nowrap; }
+        .tabela-agendamentos tbody tr { transition: background 0.15s; }
+        .tabela-agendamentos tbody tr:hover { background: #f8fbff; }
+        .tabela-agendamentos tbody td { padding: 10px 14px; border-bottom: 1px solid var(--cinza-borda); vertical-align: middle; }
+        .tabela-agendamentos tbody tr:last-child td { border-bottom: none; }
+
+        /* BADGES */
+        .badge-status { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.78rem; font-weight: 600; }
+        .badge-confirmado { background: #d1e7dd; color: #0a3622; }
+        .badge-pendente   { background: #fff3cd; color: #664d03; }
+        .badge-cancelado  { background: #f8d7da; color: #58151c; }
+
+        /* MODAL */
+        .modal-form .modal-header { background: var(--azul-primario); color: #fff; }
+        .modal-form .modal-header .btn-close { filter: invert(1); }
+        .modal-form label { font-weight: 500; font-size: 0.88rem; margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar-topo d-flex align-items-center justify-content-between px-3">
+    <div class="d-flex align-items-center gap-2">
+        <button class="btn-sanduiche" id="btnSanduiche" title="Menu">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+        <a class="navbar-brand mb-0 d-flex align-items-center" href="principal.php">
+            <i class="fa-solid fa-stethoscope"></i>
+            <span>MediAgenda</span>
+        </a>
+    </div>
+    <div class="dropdown">
+        <button class="operador-toggle" type="button" id="dropdownOperador" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="fa-solid fa-circle-user"></i>
+            <span class="d-none d-md-inline"><?php echo htmlspecialchars($operadorNome) ?></span>
+            <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem;"></i>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end dropdown-menu-operador" aria-labelledby="dropdownOperador">
+            <li><a class="dropdown-item" href="#"><i class="fa-solid fa-user"></i><?php echo htmlspecialchars($operadorNome) ?></a></li>
+            <li><a class="dropdown-item" href="#"><i class="fa-solid fa-envelope"></i><?php echo htmlspecialchars($operadorEmail) ?></a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="logout.php"><i class="fa-solid fa-right-from-bracket"></i>Sair</a></li>
+        </ul>
+    </div>
+</nav>
+
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+    <ul class="nav flex-column">
+        <li class="nav-item"><a class="nav-link" href="principal.php"><i class="fa-solid fa-calendar-days"></i> Calendário</a></li>
+        <li class="nav-item"><a class="nav-link ativo" href="cadastro_agendas.php"><i class="fa-solid fa-calendar-plus"></i> Agendamentos</a></li>
+        <li class="nav-item"><a class="nav-link" href="cadastro_medicos.php"><i class="fa-solid fa-user-doctor"></i> Cadastro de Médicos</a></li>
+        <li class="nav-item"><a class="nav-link" href="cadastro_especialidades.php"><i class="fa-solid fa-list-check"></i> Cadastro de Especialidades</a></li>
+    </ul>
+</aside>
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<!-- CONTEÚDO PRINCIPAL -->
+<main class="conteudo-principal" id="conteudoPrincipal">
+
+    <div class="page-header">
+        <h2><i class="fa-solid fa-calendar-days"></i> Cadastro de Agendas</h2>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalFormAgenda">
+            <i class="fa-solid fa-plus me-1"></i> Novo Agendamento
+        </button>
+    </div>
+
+    <!-- FILTROS -->
+    <div class="card-pagina">
+        <div class="card-titulo"><i class="fa-solid fa-magnifying-glass"></i> Filtros</div>
+        <form method="GET" action="cadastro_agendas.php">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label for="filtroPaciente">Paciente</label>
+                    <input type="text" class="form-control form-control-sm" id="filtroPaciente"
+                           name="paciente" placeholder="Nome do paciente"
+                           value="<?php echo htmlspecialchars($filtroPaciente) ?>">
+                </div>
+                <div class="col-md-3">
+                    <label for="filtroMedico">Médico</label>
+                    <select class="form-select form-select-sm" id="filtroMedico" name="medico">
+                        <option value="">Todos</option>
+                        <?php foreach ($medicos as $m): ?>
+                            <option value="<?php echo htmlspecialchars($m['nome']) ?>"
+                                <?php echo ($filtroMedico === $m['nome']) ? 'selected' : '' ?>>
+                                <?php echo htmlspecialchars($m['nome']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="filtroStatus">Status</label>
+                    <select class="form-select form-select-sm" id="filtroStatus" name="status">
+                        <option value="">Todos</option>
+                        <option value="Confirmado" <?php echo ($filtroStatus === 'Confirmado') ? 'selected' : '' ?>>Confirmado</option>
+                        <option value="Pendente"   <?php echo ($filtroStatus === 'Pendente')   ? 'selected' : '' ?>>Pendente</option>
+                        <option value="Cancelado"  <?php echo ($filtroStatus === 'Cancelado')  ? 'selected' : '' ?>>Cancelado</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="filtroDataIni">Data inicial</label>
+                    <input type="date" class="form-control form-control-sm" id="filtroDataIni"
+                           name="data_ini" value="<?php echo htmlspecialchars($filtroDataIni) ?>">
+                </div>
+                <div class="col-md-2">
+                    <label for="filtroDataFim">Data final</label>
+                    <input type="date" class="form-control form-control-sm" id="filtroDataFim"
+                           name="data_fim" value="<?php echo htmlspecialchars($filtroDataFim) ?>">
+                </div>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="fa-solid fa-magnifying-glass me-1"></i> Filtrar
+                </button>
+                <a href="cadastro_agendas.php" class="btn btn-outline-secondary btn-sm">
+                    <i class="fa-solid fa-xmark me-1"></i> Limpar
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- TABELA -->
+    <div class="card-pagina">
+        <div class="card-titulo d-flex justify-content-between align-items-center">
+            <span><i class="fa-solid fa-table-list"></i> Agendamentos</span>
+            <span id="contadorRegistros" class="text-muted" style="font-size:0.82rem; font-weight:400;">
+                <?php echo count($agendamentos) ?> registro(s) encontrado(s)
+            </span>
+        </div>
+        <div class="table-responsive">
+            <table class="tabela-agendamentos">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Data</th>
+                        <th>Horário</th>
+                        <th>Paciente</th>
+                        <th>Médico</th>
+                        <th>Especialidade</th>
+                        <th>Status</th>
+                        <th class="text-center">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($agendamentos)): ?>
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">
+                                <i class="fa-solid fa-calendar-xmark me-2"></i>Nenhum agendamento encontrado.
+                            </td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($agendamentos as $ag):
+                            $dataFormatada = date('d/m/Y', strtotime($ag['data']));
+                            if ($ag['status'] === 'Confirmado')    $classeBadge = 'badge-confirmado';
+                            elseif ($ag['status'] === 'Pendente')  $classeBadge = 'badge-pendente';
+                            else                                   $classeBadge = 'badge-cancelado';
+                        ?>
+                        <tr>
+                            <td class="text-muted"><?php echo $ag['id'] ?></td>
+                            <td><?php echo $dataFormatada ?></td>
+                            <td><?php echo htmlspecialchars(substr($ag['horario'], 0, 5)) ?></td>
+                            <td><?php echo htmlspecialchars($ag['paciente']) ?></td>
+                            <td><?php echo htmlspecialchars($ag['medico']) ?></td>
+                            <td><?php echo htmlspecialchars($ag['especialidade']) ?></td>
+                            <td><span class="badge-status <?php echo $classeBadge ?>"><?php echo htmlspecialchars($ag['status']) ?></span></td>
+                            <td class="text-center" style="white-space:nowrap;">
+                                <button class="btn btn-sm btn-outline-primary py-0 px-2 btn-editar"
+                                        title="Editar"
+                                        data-id="<?php echo $ag['id'] ?>"
+                                        data-paciente="<?php echo htmlspecialchars($ag['paciente']) ?>"
+                                        data-medico="<?php echo htmlspecialchars($ag['medico']) ?>"
+                                        data-especialidade="<?php echo htmlspecialchars($ag['especialidade']) ?>"
+                                        data-data="<?php echo $ag['data'] ?>"
+                                        data-horario="<?php echo htmlspecialchars(substr($ag['horario'], 0, 5)) ?>"
+                                        data-status="<?php echo htmlspecialchars($ag['status']) ?>">
+                                    <i class="fa-solid fa-pen"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger py-0 px-2 btn-cancelar"
+                                        title="Cancelar agendamento"
+                                        data-id="<?php echo $ag['id'] ?>"
+                                        data-paciente="<?php echo htmlspecialchars($ag['paciente']) ?>">
+                                    <i class="fa-solid fa-ban"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</main>
+
+<!-- MODAL — NOVO / EDITAR AGENDAMENTO -->
+<div class="modal fade modal-form" id="modalFormAgenda" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalFormTitulo">
+                    <i class="fa-solid fa-calendar-plus me-2"></i>Novo Agendamento
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <form id="formAgenda" action="cadastro_agendas.php" method="POST">
+                <input type="hidden" name="acao" id="formAcao" value="novo">
+                <input type="hidden" name="id"   id="formId"   value="">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label for="formPaciente">Paciente <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="formPaciente"
+                                   name="paciente" placeholder="Nome completo do paciente" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="formMedico">Médico <span class="text-danger">*</span></label>
+                            <select class="form-select" id="formMedico" name="medico_id" required>
+                                <option value="">Selecione...</option>
+                                <?php
+                                $sqlMedicos = "SELECT m.id, m.nome, e.nome AS esp_nome
+                                               FROM medicos m
+                                               JOIN especialidades e ON m.especialidade_id = e.id
+                                               WHERE m.status = 'Ativo'
+                                               ORDER BY m.nome";
+                                $queryMed = mysqli_query($conexao_bd, $sqlMedicos);
+                                while ($m = mysqli_fetch_assoc($queryMed)):
+                                ?>
+                                    <option value="<?php echo $m['id'] ?>"
+                                            data-especialidade-nome="<?php echo htmlspecialchars($m['esp_nome']) ?>">
+                                        <?php echo htmlspecialchars($m['nome']) ?>
+                                    </option>
+                                <?php endwhile; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="formEspecialidadeNome">Especialidade <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="formEspecialidadeNome"
+                                   placeholder="Auto-preenchido" readonly>
+                            <input type="hidden" id="formEspecialidadeId" name="especialidade" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="formData">Data <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" id="formData" name="data" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="formHorario">Horário <span class="text-danger">*</span></label>
+                            <input type="time" class="form-control" id="formHorario" name="horario" required>
+                        </div>
+                        <div class="col-12">
+                            <label for="formStatus">Status</label>
+                            <select class="form-select" id="formStatus" name="status">
+                                <option value="Pendente">Pendente</option>
+                                <option value="Confirmado">Confirmado</option>
+                                <option value="Cancelado">Cancelado</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-floppy-disk me-1"></i> Salvar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- SCRIPTS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+<script>
+    // ── SIDEBAR ─────────────────────────────────────────────────────────────────
+    var btnSanduiche      = document.getElementById('btnSanduiche');
+    var sidebar           = document.getElementById('sidebar');
+    var conteudoPrincipal = document.getElementById('conteudoPrincipal');
+    var sidebarOverlay    = document.getElementById('sidebarOverlay');
+
+    btnSanduiche.addEventListener('click', function () {
+        if (window.innerWidth <= 991.98) {
+            sidebar.classList.toggle('aberta');
+            sidebarOverlay.classList.toggle('ativo');
+        } else {
+            sidebar.classList.toggle('oculta');
+            conteudoPrincipal.classList.toggle('expandido');
+        }
+    });
+    sidebarOverlay.addEventListener('click', function () {
+        sidebar.classList.remove('aberta');
+        sidebarOverlay.classList.remove('ativo');
+    });
+    window.addEventListener('resize', function () {
+        if (window.innerWidth > 991.98) {
+            sidebar.classList.remove('aberta');
+            sidebarOverlay.classList.remove('ativo');
+        }
+    });
+
+    // ── MODAL ────────────────────────────────────────────────────────────────────
+    var modalFormAgendaEl = document.getElementById('modalFormAgenda');
+    var modalFormAgenda   = new bootstrap.Modal(modalFormAgendaEl);
+    var modoEdicao        = false;
+
+    // Ao abrir no modo "Novo" limpa o formulário
+    modalFormAgendaEl.addEventListener('show.bs.modal', function () {
+        if (!modoEdicao) {
+            document.getElementById('modalFormTitulo').innerHTML =
+                '<i class="fa-solid fa-calendar-plus me-2"></i>Novo Agendamento';
+            document.getElementById('formAcao').value = 'novo';
+            document.getElementById('formId').value   = '';
+            document.getElementById('formAgenda').reset();
+            document.getElementById('formEspecialidadeNome').value = '';
+            document.getElementById('formEspecialidadeId').value   = '';
+        }
+        modoEdicao = false;
+    });
+
+    // ── AUTO-PREENCHER ESPECIALIDADE AO SELECIONAR MÉDICO ────────────────────────
+    document.getElementById('formMedico').addEventListener('change', function () {
+        var opcao   = this.options[this.selectedIndex];
+        var espNome = opcao.getAttribute('data-especialidade-nome') || '';
+        document.getElementById('formEspecialidadeNome').value = espNome;
+        document.getElementById('formEspecialidadeId').value   = espNome;
+    });
+
+    // ── EVENT DELEGATION: EDITAR e CANCELAR ──────────────────────────────────────
+    document.querySelector('.tabela-agendamentos').addEventListener('click', function (e) {
+        var btnEditar   = e.target.closest('.btn-editar');
+        var btnCancelar = e.target.closest('.btn-cancelar');
+
+        // ── EDITAR ────────────────────────────────────────────────────────────────
+        if (btnEditar) {
+            modoEdicao = true;
+            document.getElementById('modalFormTitulo').innerHTML =
+                '<i class="fa-solid fa-pen me-2"></i>Editar Agendamento';
+            document.getElementById('formAcao').value     = 'editar';
+            document.getElementById('formId').value       = btnEditar.dataset.id;
+            document.getElementById('formPaciente').value = btnEditar.dataset.paciente;
+            document.getElementById('formData').value     = btnEditar.dataset.data;
+            document.getElementById('formHorario').value  = btnEditar.dataset.horario;
+            document.getElementById('formStatus').value   = btnEditar.dataset.status;
+
+            // Seleciona médico pelo nome e dispara o change para preencher especialidade
+            var sel = document.getElementById('formMedico');
+            for (var i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].text === btnEditar.dataset.medico) {
+                    sel.selectedIndex = i;
+                    break;
+                }
+            }
+            // Preenche especialidade diretamente (não dispara change para evitar sobrescrever)
+            document.getElementById('formEspecialidadeNome').value = btnEditar.dataset.especialidade;
+            document.getElementById('formEspecialidadeId').value   = btnEditar.dataset.especialidade;
+
+            modalFormAgenda.show();
+        }
+
+        // ── CANCELAR ─────────────────────────────────────────────────────────────
+        if (btnCancelar) {
+            Swal.fire({
+                title: 'Cancelar agendamento?',
+                html: 'Deseja cancelar o agendamento de <strong>' + btnCancelar.dataset.paciente + '</strong>?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor:  '#6c757d',
+                confirmButtonText:  'Sim, cancelar',
+                cancelButtonText:   'Voltar'
+            }).then(function (result) {
+                if (result.isConfirmed) {
+                    // Envia via AJAX para o cancelar_agendamento.php
+                    fetch('cancelar_agendamento.php', {
+                        method:  'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body:    'id=' + btnCancelar.dataset.id + '&acao=cancelar'
+                    })
+                    .then(function (r) { return r.json(); })
+                    .then(function (dados) {
+                        if (!dados.sucesso) {
+                            Swal.fire({ icon: 'error', title: 'Erro', text: dados.mensagem || 'Não foi possível cancelar.', confirmButtonColor: '#0d6efd' });
+                            return;
+                        }
+                        Swal.fire({
+                            icon: 'success', title: 'Cancelado!',
+                            text: 'O agendamento foi cancelado.',
+                            confirmButtonColor: '#0d6efd',
+                            timer: 1800, showConfirmButton: false
+                        }).then(function () { window.location.href = 'cadastro_agendas.php'; });
+                    })
+                    .catch(function () {
+                        Swal.fire({ icon: 'error', title: 'Erro de comunicação', text: 'Não foi possível conectar ao servidor.', confirmButtonColor: '#0d6efd' });
+                    });
+                }
+            });
+        }
+    });
+</script>
+</body>
+</html>
+<?php
+session_start();
+require_once("conexao.php");
+
+// Verificação de segurança da sessão
+if(!isset($_SESSION['cod_usuario'])){
+    header("Location: login.php");
+    exit;
+}
+
+// Recupera dados do operador
+$cod_usuario = $_SESSION['cod_usuario'];
+$nomeUsuario = "";
+$emailUsuario = "";
+$sql_user = "SELECT * FROM usuario WHERE cod_usuario = '$cod_usuario'";
+$result_user = mysqli_query($conexao_bd, $sql_user);
+
+if($consulta = mysqli_fetch_assoc($result_user)){
+    $nomeUsuario  = $consulta['nome'];
+    $emailUsuario = $consulta['email'];
+}
+$operadorNome  = $nomeUsuario;
+
+// ============================================================
+// LÓGICA DE NEGÓCIOS (CRUD)
+// ============================================================
+$mensagem = "";
+$modoEdicao = false;
+$idEdicao = null;
+$nomeEdicao = "";
+
+// 1. INSERIR (Create)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cadastrar'])) {
+    $nomeEspecialidade = mysqli_real_escape_string($conexao_bd, trim($_POST['nome']));
+    
+    if (!empty($nomeEspecialidade)) {
+        // Verifica duplicidade para evitar o erro de UNIQUE KEY do script do professor
+        $sqlCheck = "SELECT id FROM especialidades WHERE nome = '$nomeEspecialidade'";
+        $resultCheck = mysqli_query($conexao_bd, $sqlCheck);
+        
+        if (mysqli_num_rows($resultCheck) > 0) {
+            $mensagem = "<div class='alert alert-warning alert-dismissible fade show'>Esta especialidade já está cadastrada.<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+        } else {
+            $sqlInsert = "INSERT INTO especialidades (nome) VALUES ('$nomeEspecialidade')";
+            if (mysqli_query($conexao_bd, $sqlInsert)) {
+                $mensagem = "<div class='alert alert-success alert-dismissible fade show'>Especialidade cadastrada com sucesso!<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+            } else {
+                $mensagem = "<div class='alert alert-danger alert-dismissible fade show'>Erro ao cadastrar: " . mysqli_error($conexao_bd) . "<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+            }
+        }
+    }
+}
+
+// 2. EXCLUIR (Delete)
+if (isset($_GET['acao']) && $_GET['acao'] === 'excluir' && isset($_GET['id'])) {
+    $idExcluir = (int)$_GET['id'];
+    
+    // O banco possui restrição (ON DELETE RESTRICT). Falhará se houver médicos na especialidade.
+    $sqlDelete = "DELETE FROM especialidades WHERE id = $idExcluir";
+    if (mysqli_query($conexao_bd, $sqlDelete)) {
+        $mensagem = "<div class='alert alert-success alert-dismissible fade show'>Especialidade excluída com sucesso!<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+    } else {
+        $mensagem = "<div class='alert alert-danger alert-dismissible fade show'>Não é possível excluir. Existem médicos vinculados a esta especialidade.<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+    }
+}
+
+// 3. PREPARAR EDIÇÃO (Read para Update)
+if (isset($_GET['acao']) && $_GET['acao'] === 'editar' && isset($_GET['id'])) {
+    $modoEdicao = true;
+    $idEdicao = (int)$_GET['id'];
+    $sqlBusca = "SELECT nome FROM especialidades WHERE id = $idEdicao";
+    $resultBusca = mysqli_query($conexao_bd, $sqlBusca);
+    if ($row = mysqli_fetch_assoc($resultBusca)) {
+        $nomeEdicao = $row['nome'];
+    }
+}
+
+// 4. ATUALIZAR (Update)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['atualizar'])) {
+    $idAtualizar = (int)$_POST['id_especialidade'];
+    $nomeNovo = mysqli_real_escape_string($conexao_bd, trim($_POST['nome']));
+    
+    if (!empty($nomeNovo)) {
+        $sqlUpdate = "UPDATE especialidades SET nome = '$nomeNovo' WHERE id = $idAtualizar";
+        if (mysqli_query($conexao_bd, $sqlUpdate)) {
+            $mensagem = "<div class='alert alert-success alert-dismissible fade show'>Especialidade atualizada com sucesso!<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+            $modoEdicao = false; 
+            $nomeEdicao = "";
+        } else {
+            $mensagem = "<div class='alert alert-danger alert-dismissible fade show'>Erro ao atualizar a especialidade.<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+        }
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediAgenda - Cadastro de Especialidades</title>
+    <link rel="icon" type="image/x-icon" href="img/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --azul-primario: #0d6efd;
+            --azul-escuro:   #084298;
+            --azul-claro:    #e7f1ff;
+            --cinza-fundo:   #f5f7fa;
+            --cinza-borda:   #e3e6ea;
+            --texto-escuro:  #1f2d3d;
+            --sidebar-larg:  250px;
+        }
+        body { background-color: var(--cinza-fundo); font-family: 'Segoe UI', Tahoma, sans-serif; color: var(--texto-escuro); overflow-x: hidden; }
+        .navbar-topo { background: linear-gradient(90deg, var(--azul-primario) 0%, var(--azul-escuro) 100%); height: 60px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: fixed; top: 0; left: 0; right: 0; z-index: 1030; }
+        .navbar-topo .navbar-brand { color: #fff; font-weight: 600; font-size: 1.25rem; }
+        .navbar-topo .navbar-brand i { margin-right: 8px; }
+        .btn-sanduiche { background: transparent; border: none; color: #fff; font-size: 1.3rem; padding: 6px 12px; border-radius: 6px; }
+        .operador-toggle { background: transparent; border: none; color: #fff; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 30px; }
+        .operador-toggle i.fa-circle-user { font-size: 1.6rem; }
+        .dropdown-menu-operador { min-width: 220px; border-radius: 10px; border: none; }
+        .dropdown-menu-operador .dropdown-item i { width: 22px; color: var(--azul-primario); }
+        .sidebar { position: fixed; top: 60px; left: 0; width: var(--sidebar-larg); height: calc(100vh - 60px); background: #fff; border-right: 1px solid var(--cinza-borda); padding: 20px 0; z-index: 1020; overflow-y: auto; transition: transform 0.3s ease; }
+        .sidebar.oculta { transform: translateX(calc(var(--sidebar-larg) * -1)); }
+        .sidebar .nav-link { color: var(--texto-escuro); padding: 12px 20px; border-left: 3px solid transparent; display: flex; align-items: center; gap: 12px; }
+        .sidebar .nav-link i { width: 22px; color: var(--azul-primario); font-size: 1.05rem; }
+        .sidebar .nav-link:hover, .sidebar .nav-link.ativo { background: var(--azul-claro); border-left-color: var(--azul-primario); color: var(--azul-escuro); font-weight: 600; }
+        .sidebar-overlay { display: none; position: fixed; top: 60px; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 1010; }
+        .sidebar-overlay.ativo { display: block; }
+        .conteudo-principal { margin-top: 60px; margin-left: var(--sidebar-larg); padding: 25px; transition: margin-left 0.3s ease; min-height: calc(100vh - 60px); }
+        .conteudo-principal.expandido { margin-left: 0; }
+        @media (max-width: 991.98px) {
+            .sidebar { transform: translateX(calc(var(--sidebar-larg) * -1)); }
+            .sidebar.aberta { transform: translateX(0); box-shadow: 2px 0 12px rgba(0,0,0,0.15); }
+            .conteudo-principal { margin-left: 0; }
+        }
+        .card-padrao { background: #fff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid var(--cinza-borda); padding: 20px; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar-topo d-flex align-items-center justify-content-between px-3">
+        <div class="d-flex align-items-center gap-2">
+            <button class="btn-sanduiche" id="btnSanduiche"><i class="fa-solid fa-bars"></i></button>
+            <a class="navbar-brand mb-0 d-flex align-items-center" href="principal.php">
+                <i class="fa-solid fa-stethoscope"></i> <span>MediAgenda</span>
+            </a>
+        </div>
+        <div class="dropdown">
+            <button class="operador-toggle" type="button" id="dropdownOperador" data-bs-toggle="dropdown">
+                <i class="fa-solid fa-circle-user"></i> <span class="d-none d-md-inline"><?php echo htmlspecialchars($operadorNome); ?></span> <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem;"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end dropdown-menu-operador">
+                <li><a class="dropdown-item" href="logout.php"><i class="fa-solid fa-right-from-bracket"></i>Sair</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <aside class="sidebar" id="sidebar">
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link" href="principal.php"><i class="fa-solid fa-calendar-days"></i> Calendário</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="cadastro_agendas.php"><i class="fa-solid fa-calendar-plus"></i> Agendamentos</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="cadastro_medicos.php"><i class="fa-solid fa-user-doctor"></i> Cadastro de Médicos</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link ativo" href="cadastro_especialidades.php"><i class="fa-solid fa-list-check"></i> Cadastro de Especialidades</a>
+            </li>
+        </ul>
+    </aside>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <main class="conteudo-principal" id="conteudoPrincipal">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="h3 mb-0 text-gray-800">Especialidades Médicas</h2>
+        </div>
+        
+        <?php if(!empty($mensagem)) echo $mensagem; ?>
+
+        <div class="row">
+            <div class="col-md-4 mb-4">
+                <div class="card-padrao">
+                    <h5 class="mb-3"><?php echo $modoEdicao ? 'Editar Especialidade' : 'Nova Especialidade'; ?></h5>
+                    
+                    <form method="POST" action="cadastro_especialidades.php">
+                        <?php if($modoEdicao): ?>
+                            <input type="hidden" name="id_especialidade" value="<?php echo $idEdicao; ?>">
+                        <?php endif; ?>
+                        
+                        <div class="mb-3">
+                            <label for="nome" class="form-label">Nome da Especialidade <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="nome" name="nome" value="<?php echo htmlspecialchars($nomeEdicao); ?>" required autofocus>
+                        </div>
+                        
+                        <?php if($modoEdicao): ?>
+                            <button type="submit" name="atualizar" class="btn btn-warning w-100 mb-2"><i class="fa-solid fa-floppy-disk me-2"></i>Salvar Alterações</button>
+                            <a href="cadastro_especialidades.php" class="btn btn-secondary w-100">Cancelar Edição</a>
+                        <?php else: ?>
+                            <button type="submit" name="cadastrar" class="btn btn-primary w-100"><i class="fa-solid fa-plus me-2"></i>Cadastrar Especialidade</button>
+                        <?php endif; ?>
+                    </form>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="card-padrao">
+                    <h5 class="mb-3">Especialidades Cadastradas</h5>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th scope="col" width="10%">ID</th>
+                                    <th scope="col" width="60%">Nome da Especialidade</th>
+                                    <th scope="col" width="30%" class="text-center">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                // 5. LISTAR (Read)
+                                $sqlListar = "SELECT * FROM especialidades ORDER BY nome ASC";
+                                $resultListar = mysqli_query($conexao_bd, $sqlListar);
+                                
+                                if (mysqli_num_rows($resultListar) > 0) {
+                                    while ($row = mysqli_fetch_assoc($resultListar)) {
+                                        echo "<tr>";
+                                        echo "<td>" . htmlspecialchars($row['id']) . "</td>";
+                                        echo "<td><strong>" . htmlspecialchars($row['nome']) . "</strong></td>";
+                                        echo "<td class='text-center'>
+                                                <a href='cadastro_especialidades.php?acao=editar&id=" . $row['id'] . "' class='btn btn-sm btn-outline-primary me-2' title='Editar'>
+                                                    <i class='fa-solid fa-pen'></i>
+                                                </a>
+                                                <a href='cadastro_especialidades.php?acao=excluir&id=" . $row['id'] . "' class='btn btn-sm btn-outline-danger' title='Excluir' onclick='return confirm(\"Tem certeza que deseja excluir a especialidade " . addslashes($row['nome']) . "?\");'>
+                                                    <i class='fa-solid fa-trash'></i>
+                                                </a>
+                                              </td>";
+                                        echo "</tr>";
+                                    }
+                                } else {
+                                    echo "<tr><td colspan='3' class='text-center py-4 text-muted'>Nenhuma especialidade cadastrada no sistema.</td></tr>";
+                                }
+                                ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const btnSanduiche = document.getElementById('btnSanduiche');
+        const sidebar = document.getElementById('sidebar');
+        const conteudoPrincipal = document.getElementById('conteudoPrincipal');
+        const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+        btnSanduiche.addEventListener('click', () => {
+            if (window.innerWidth <= 991.98) {
+                sidebar.classList.toggle('aberta');
+                sidebarOverlay.classList.toggle('ativo');
+            } else {
+                sidebar.classList.toggle('oculta');
+                conteudoPrincipal.classList.toggle('expandido');
+            }
+        });
+
+        sidebarOverlay.addEventListener('click', () => {
+            sidebar.classList.remove('aberta');
+            sidebarOverlay.classList.remove('ativo');
+        });
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 991.98) {
+                sidebar.classList.remove('aberta');
+                sidebarOverlay.classList.remove('ativo');
+            }
+        });
+    </script>
+</body>
+</html>
+<?php
+session_start();
+require_once("conexao.php");
+
+// Verificação de segurança da sessão
+if(!isset($_SESSION['cod_usuario'])){
+    header("Location: login.php");
+    exit;
+}
+
+// Recupera dados do operador
+$cod_usuario = $_SESSION['cod_usuario'];
+$nomeUsuario = "";
+$emailUsuario = "";
+$sql_user = "SELECT * FROM usuario WHERE cod_usuario = '$cod_usuario'";
+$result_user = mysqli_query($conexao_bd, $sql_user);
+
+if($consulta = mysqli_fetch_assoc($result_user)){
+    $nomeUsuario  = $consulta['nome'];
+    $emailUsuario = $consulta['email'];
+}
+$operadorNome = $nomeUsuario;
+
+// ============================================================
+// LÓGICA DE NEGÓCIOS (CRUD)
+// ============================================================
+$mensagem = "";
+$modoEdicao = false;
+$idEdicao = null;
+$dadosEdicao = [
+    'nome' => '', 'crm' => '', 'especialidade_id' => '', 
+    'telefone' => '', 'email' => '', 'status' => 'Ativo'
+];
+
+// 1. INSERIR (Create)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cadastrar'])) {
+    $nome = mysqli_real_escape_string($conexao_bd, trim($_POST['nome']));
+    $crm = mysqli_real_escape_string($conexao_bd, trim($_POST['crm']));
+    $especialidade_id = (int)$_POST['especialidade_id'];
+    $telefone = mysqli_real_escape_string($conexao_bd, trim($_POST['telefone']));
+    $email = mysqli_real_escape_string($conexao_bd, trim($_POST['email']));
+    $status = mysqli_real_escape_string($conexao_bd, trim($_POST['status']));
+    
+    // Verifica duplicidade de CRM
+    $sqlCheck = "SELECT id FROM medicos WHERE crm = '$crm'";
+    if (mysqli_num_rows(mysqli_query($conexao_bd, $sqlCheck)) > 0) {
+        $mensagem = "<div class='alert alert-warning alert-dismissible fade show'>Já existe um médico cadastrado com este CRM.<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+    } else {
+        $sqlInsert = "INSERT INTO medicos (nome, crm, especialidade_id, telefone, email, status) 
+                      VALUES ('$nome', '$crm', $especialidade_id, '$telefone', '$email', '$status')";
+        if (mysqli_query($conexao_bd, $sqlInsert)) {
+            $mensagem = "<div class='alert alert-success alert-dismissible fade show'>Médico cadastrado com sucesso!<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+        } else {
+            $mensagem = "<div class='alert alert-danger alert-dismissible fade show'>Erro ao cadastrar: " . mysqli_error($conexao_bd) . "<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+        }
+    }
+}
+
+// 2. EXCLUIR (Delete)
+if (isset($_GET['acao']) && $_GET['acao'] === 'excluir' && isset($_GET['id'])) {
+    $idExcluir = (int)$_GET['id'];
+    // Tratamento caso o médico tenha agendamentos (ON DELETE RESTRICT)
+    $sqlDelete = "DELETE FROM medicos WHERE id = $idExcluir";
+    if (mysqli_query($conexao_bd, $sqlDelete)) {
+        $mensagem = "<div class='alert alert-success alert-dismissible fade show'>Médico excluído com sucesso!<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+    } else {
+        $mensagem = "<div class='alert alert-danger alert-dismissible fade show'>Não é possível excluir. Existem agendamentos vinculados a este médico.<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+    }
+}
+
+// 3. PREPARAR EDIÇÃO (Read para Update)
+if (isset($_GET['acao']) && $_GET['acao'] === 'editar' && isset($_GET['id'])) {
+    $modoEdicao = true;
+    $idEdicao = (int)$_GET['id'];
+    $sqlBusca = "SELECT * FROM medicos WHERE id = $idEdicao";
+    $resultBusca = mysqli_query($conexao_bd, $sqlBusca);
+    if ($row = mysqli_fetch_assoc($resultBusca)) {
+        $dadosEdicao = $row;
+    }
+}
+
+// 4. ATUALIZAR (Update)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['atualizar'])) {
+    $idAtualizar = (int)$_POST['id_medico'];
+    $nome = mysqli_real_escape_string($conexao_bd, trim($_POST['nome']));
+    $crm = mysqli_real_escape_string($conexao_bd, trim($_POST['crm']));
+    $especialidade_id = (int)$_POST['especialidade_id'];
+    $telefone = mysqli_real_escape_string($conexao_bd, trim($_POST['telefone']));
+    $email = mysqli_real_escape_string($conexao_bd, trim($_POST['email']));
+    $status = mysqli_real_escape_string($conexao_bd, trim($_POST['status']));
+    
+    $sqlUpdate = "UPDATE medicos SET nome='$nome', crm='$crm', especialidade_id=$especialidade_id, telefone='$telefone', email='$email', status='$status' WHERE id=$idAtualizar";
+    
+    if (mysqli_query($conexao_bd, $sqlUpdate)) {
+        $mensagem = "<div class='alert alert-success alert-dismissible fade show'>Dados do médico atualizados com sucesso!<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+        $modoEdicao = false; 
+    } else {
+        $mensagem = "<div class='alert alert-danger alert-dismissible fade show'>Erro ao atualizar: " . mysqli_error($conexao_bd) . "<button type='button' class='btn-close' data-bs-dismiss='alert'></button></div>";
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediAgenda - Cadastro de Médicos</title>
+    <link rel="icon" type="image/x-icon" href="img/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --azul-primario: #0d6efd;
+            --azul-escuro:   #084298;
+            --azul-claro:    #e7f1ff;
+            --cinza-fundo:   #f5f7fa;
+            --cinza-borda:   #e3e6ea;
+            --texto-escuro:  #1f2d3d;
+            --sidebar-larg:  250px;
+        }
+        body { background-color: var(--cinza-fundo); font-family: 'Segoe UI', Tahoma, sans-serif; color: var(--texto-escuro); overflow-x: hidden; }
+        .navbar-topo { background: linear-gradient(90deg, var(--azul-primario) 0%, var(--azul-escuro) 100%); height: 60px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: fixed; top: 0; left: 0; right: 0; z-index: 1030; }
+        .navbar-topo .navbar-brand { color: #fff; font-weight: 600; font-size: 1.25rem; }
+        .navbar-topo .navbar-brand i { margin-right: 8px; }
+        .btn-sanduiche { background: transparent; border: none; color: #fff; font-size: 1.3rem; padding: 6px 12px; border-radius: 6px; }
+        .operador-toggle { background: transparent; border: none; color: #fff; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 30px; }
+        .operador-toggle i.fa-circle-user { font-size: 1.6rem; }
+        .dropdown-menu-operador { min-width: 220px; border-radius: 10px; border: none; }
+        .dropdown-menu-operador .dropdown-item i { width: 22px; color: var(--azul-primario); }
+        .sidebar { position: fixed; top: 60px; left: 0; width: var(--sidebar-larg); height: calc(100vh - 60px); background: #fff; border-right: 1px solid var(--cinza-borda); padding: 20px 0; z-index: 1020; overflow-y: auto; transition: transform 0.3s ease; }
+        .sidebar.oculta { transform: translateX(calc(var(--sidebar-larg) * -1)); }
+        .sidebar .nav-link { color: var(--texto-escuro); padding: 12px 20px; border-left: 3px solid transparent; display: flex; align-items: center; gap: 12px; }
+        .sidebar .nav-link i { width: 22px; color: var(--azul-primario); font-size: 1.05rem; }
+        .sidebar .nav-link:hover, .sidebar .nav-link.ativo { background: var(--azul-claro); border-left-color: var(--azul-primario); color: var(--azul-escuro); font-weight: 600; }
+        .sidebar-overlay { display: none; position: fixed; top: 60px; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 1010; }
+        .sidebar-overlay.ativo { display: block; }
+        .conteudo-principal { margin-top: 60px; margin-left: var(--sidebar-larg); padding: 25px; transition: margin-left 0.3s ease; min-height: calc(100vh - 60px); }
+        .conteudo-principal.expandido { margin-left: 0; }
+        @media (max-width: 991.98px) {
+            .sidebar { transform: translateX(calc(var(--sidebar-larg) * -1)); }
+            .sidebar.aberta { transform: translateX(0); box-shadow: 2px 0 12px rgba(0,0,0,0.15); }
+            .conteudo-principal { margin-left: 0; }
+        }
+        .card-padrao { background: #fff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid var(--cinza-borda); padding: 20px; }
+        .badge-ativo { background-color: #d1e7dd; color: #0f5132; padding: 5px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+        .badge-inativo { background-color: #f8d7da; color: #842029; padding: 5px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar-topo d-flex align-items-center justify-content-between px-3">
+        <div class="d-flex align-items-center gap-2">
+            <button class="btn-sanduiche" id="btnSanduiche"><i class="fa-solid fa-bars"></i></button>
+            <a class="navbar-brand mb-0 d-flex align-items-center" href="principal.php">
+                <i class="fa-solid fa-stethoscope"></i> <span>MediAgenda</span>
+            </a>
+        </div>
+        <div class="dropdown">
+            <button class="operador-toggle" type="button" id="dropdownOperador" data-bs-toggle="dropdown">
+                <i class="fa-solid fa-circle-user"></i> <span class="d-none d-md-inline"><?php echo htmlspecialchars($operadorNome); ?></span> <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem;"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end dropdown-menu-operador">
+                <li><a class="dropdown-item" href="logout.php"><i class="fa-solid fa-right-from-bracket"></i>Sair</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <aside class="sidebar" id="sidebar">
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link" href="principal.php"><i class="fa-solid fa-calendar-days"></i> Calendário</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="cadastro_agendas.php"><i class="fa-solid fa-calendar-plus"></i> Agendamentos</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link ativo" href="cadastro_medicos.php"><i class="fa-solid fa-user-doctor"></i> Cadastro de Médicos</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="cadastro_especialidades.php"><i class="fa-solid fa-list-check"></i> Cadastro de Especialidades</a>
+            </li>
+        </ul>
+    </aside>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <main class="conteudo-principal" id="conteudoPrincipal">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="h3 mb-0 text-gray-800"><i class="fa-solid fa-user-doctor me-2" style="color: var(--azul-primario);"></i>Corpo Clínico</h2>
+        </div>
+        
+        <?php if(!empty($mensagem)) echo $mensagem; ?>
+
+        <div class="row">
+            <div class="col-md-4 mb-4">
+                <div class="card-padrao">
+                    <h5 class="mb-4"><?php echo $modoEdicao ? 'Editar Médico' : 'Novo Médico'; ?></h5>
+                    
+                    <form method="POST" action="cadastro_medicos.php">
+                        <?php if($modoEdicao): ?>
+                            <input type="hidden" name="id_medico" value="<?php echo $idEdicao; ?>">
+                        <?php endif; ?>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Nome Completo <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="nome" value="<?php echo htmlspecialchars($dadosEdicao['nome']); ?>" required autofocus>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">CRM <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="crm" placeholder="Ex: CRM/SP 12345" value="<?php echo htmlspecialchars($dadosEdicao['crm']); ?>" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Telefone</label>
+                                <input type="text" class="form-control" name="telefone" value="<?php echo htmlspecialchars($dadosEdicao['telefone']); ?>">
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Especialidade <span class="text-danger">*</span></label>
+                            <select class="form-select" name="especialidade_id" required>
+                                <option value="">Selecione...</option>
+                                <?php
+                                // BUSCA DINÂMICA DAS ESPECIALIDADES
+                                $sqlEsp = "SELECT id, nome FROM especialidades ORDER BY nome ASC";
+                                $resEsp = mysqli_query($conexao_bd, $sqlEsp);
+                                while ($esp = mysqli_fetch_assoc($resEsp)) {
+                                    $selected = ($dadosEdicao['especialidade_id'] == $esp['id']) ? 'selected' : '';
+                                    echo "<option value='{$esp['id']}' $selected>" . htmlspecialchars($esp['nome']) . "</option>";
+                                }
+                                ?>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">E-mail</label>
+                            <input type="email" class="form-control" name="email" value="<?php echo htmlspecialchars($dadosEdicao['email']); ?>">
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label">Status</label>
+                            <select class="form-select" name="status">
+                                <option value="Ativo" <?php echo ($dadosEdicao['status'] === 'Ativo') ? 'selected' : ''; ?>>Ativo</option>
+                                <option value="Inativo" <?php echo ($dadosEdicao['status'] === 'Inativo') ? 'selected' : ''; ?>>Inativo</option>
+                            </select>
+                        </div>
+                        
+                        <?php if($modoEdicao): ?>
+                            <button type="submit" name="atualizar" class="btn btn-warning w-100 mb-2"><i class="fa-solid fa-floppy-disk me-2"></i>Salvar Alterações</button>
+                            <a href="cadastro_medicos.php" class="btn btn-secondary w-100">Cancelar Edição</a>
+                        <?php else: ?>
+                            <button type="submit" name="cadastrar" class="btn btn-primary w-100"><i class="fa-solid fa-user-plus me-2"></i>Cadastrar Médico</button>
+                        <?php endif; ?>
+                    </form>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="card-padrao">
+                    <h5 class="mb-3">Médicos Cadastrados</h5>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped align-middle" style="font-size: 0.9rem;">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>CRM</th>
+                                    <th>Nome</th>
+                                    <th>Especialidade</th>
+                                    <th>Telefone</th>
+                                    <th>Status</th>
+                                    <th class="text-center">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                // LISTAGEM UTILIZANDO A VIEW DO PROFESSOR (vw_medicos)
+                                $sqlListar = "SELECT * FROM vw_medicos ORDER BY nome ASC";
+                                $resultListar = mysqli_query($conexao_bd, $sqlListar);
+                                
+                                if (mysqli_num_rows($resultListar) > 0) {
+                                    while ($row = mysqli_fetch_assoc($resultListar)) {
+                                        $badgeClass = ($row['status'] === 'Ativo') ? 'badge-ativo' : 'badge-inativo';
+                                        
+                                        echo "<tr>";
+                                        echo "<td><small class='text-muted'>" . htmlspecialchars($row['crm']) . "</small></td>";
+                                        echo "<td><strong>" . htmlspecialchars($row['nome']) . "</strong></td>";
+                                        echo "<td>" . htmlspecialchars($row['especialidade']) . "</td>";
+                                        echo "<td>" . htmlspecialchars($row['telefone']) . "</td>";
+                                        echo "<td><span class='$badgeClass'>" . htmlspecialchars($row['status']) . "</span></td>";
+                                        echo "<td class='text-center' style='white-space:nowrap;'>
+                                                <a href='cadastro_medicos.php?acao=editar&id=" . $row['id'] . "' class='btn btn-sm btn-outline-primary me-1' title='Editar'>
+                                                    <i class='fa-solid fa-pen'></i>
+                                                </a>
+                                                <a href='cadastro_medicos.php?acao=excluir&id=" . $row['id'] . "' class='btn btn-sm btn-outline-danger' title='Excluir' onclick='return confirm(\"Tem certeza que deseja excluir o(a) Dr(a) " . addslashes($row['nome']) . "?\");'>
+                                                    <i class='fa-solid fa-trash'></i>
+                                                </a>
+                                              </td>";
+                                        echo "</tr>";
+                                    }
+                                } else {
+                                    echo "<tr><td colspan='6' class='text-center py-4 text-muted'>Nenhum médico cadastrado no sistema.</td></tr>";
+                                }
+                                ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const btnSanduiche = document.getElementById('btnSanduiche');
+        const sidebar = document.getElementById('sidebar');
+        const conteudoPrincipal = document.getElementById('conteudoPrincipal');
+        const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+        btnSanduiche.addEventListener('click', () => {
+            if (window.innerWidth <= 991.98) {
+                sidebar.classList.toggle('aberta');
+                sidebarOverlay.classList.toggle('ativo');
+            } else {
+                sidebar.classList.toggle('oculta');
+                conteudoPrincipal.classList.toggle('expandido');
+            }
+        });
+
+        sidebarOverlay.addEventListener('click', () => {
+            sidebar.classList.remove('aberta');
+            sidebarOverlay.classList.remove('ativo');
+        });
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 991.98) {
+                sidebar.classList.remove('aberta');
+                sidebarOverlay.classList.remove('ativo');
+            }
+        });
+    </script>
+</body>
+</html>
+<?php
+/* ============================================================
+   cancelar_agendamento.php
+   Endpoint chamado via fetch() pelo principal.php para
+   cancelar (status = 'Cancelado') um agendamento pelo id.
+
+   Método esperado : POST
+   Parâmetro       : id (int) — id do agendamento
+   Retorno         : JSON  { "sucesso": true }
+                        ou { "sucesso": false, "mensagem": "..." }
+============================================================ */
+
+header('Content-Type: application/json; charset=utf-8');
+
+// Validação de sessão
+session_start();
+if (!isset($_SESSION['cod_usuario'])) {
+    http_response_code(401);
+    echo json_encode(['sucesso' => false, 'mensagem' => 'Não autorizado.']);
+    exit;
+}
+
+// Validação do método
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['sucesso' => false, 'mensagem' => 'Método não permitido.']);
+    exit;
+}
+
+// Validação do ID
+$id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+if ($id <= 0) {
+    http_response_code(400);
+    echo json_encode(['sucesso' => false, 'mensagem' => 'ID inválido.']);
+    exit;
+}
+
+// Conexão com o banco
+require_once 'conexao.php';
+
+// Cancelamento via exclusão lógica (atualiza status para 'Cancelado')
+$stmt = $conexao_bd->prepare("UPDATE agendamentos SET status = 'Cancelado' WHERE id = ?");
+
+if (!$stmt) {
+    http_response_code(500);
+    echo json_encode(['sucesso' => false, 'mensagem' => 'Erro ao preparar a query: ' . $conexao_bd->error]);
+    exit;
+}
+
+$stmt->bind_param('i', $id);
+$stmt->execute();
+
+if ($stmt->affected_rows === 0) {
+    http_response_code(404);
+    echo json_encode(['sucesso' => false, 'mensagem' => 'Agendamento não encontrado ou já cancelado.']);
+    $stmt->close();
+    exit;
+}
+
+$stmt->close();
+
+echo json_encode(['sucesso' => true]);
+<?php
+    //abrir banco de dados:
+    $host_bd = "localhost";
+    $login_bd = "root";
+    $password_bd = "";
+    $nome_bd = "labdbprog2";
+    $port = 3306;
+
+    $conexao_bd = mysqli_connect($host_bd, $login_bd, $password_bd,$nome_bd, $port);
+
+
+?>
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" 
+     content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Aula 30_03_26</title>
+</head>
+<body>
+    <h1>Aula 30/03/2026</h1>
+    <ul>
+        <li>Home</li>
+        <li><a href="cadastro.php?name=Eduardo&course=SI">Cadastro</a></li>
+        <li>Relatórios</li>
+    </ul>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta 
+        name="viewport" 
+        content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Agendador de consultas</title>
+    <link 
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" 
+        rel="stylesheet" 
+        integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" 
+        crossorigin="anonymous">
+    <script type="text/javascript">
+        function validateForm(){
+            var usuarioTela = document.getElementById("usuario").value;
+            var senhaTela   = document.getElementById("senha").value;
+            if(usuarioTela.length == 0){
+                //alert("Usuário em branco. Verifique!");
+                Swal.fire({
+                    icon: "error",
+                    title: "Oops...",
+                    text: "Usuário em branco. Verifique!"                    
+                });
+                return false;
+            }else{
+                if(senhaTela.length == 0){
+                    //alert("Senha em branco. Verifique!");
+                    Swal.fire({
+                        icon: "error",
+                        title: "Oops...",
+                        text: "Senha em branco. Verifique!"                    
+                    });
+                    return false;
+                }else{
+                    return true;
+                }
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="top-content">
+        <div class="inner-bg">
+            <div class="container">
+                <div class="row">
+                    <div class="col-sm6 col-sm-offset-3 form-box">
+                        <div class="formt-top-left">
+                            <h3>Sistema de agendamento de consultas</h3>
+                            <p>Digite seu Usuário e Senha</p>
+                        </div>
+                    </div>
+                    <div class="form-bottom">
+                        <form role="form" 
+                              action="cadastrobanco.php" 
+                              method="POST"
+                              class="login-form"
+                              onSubmit="return validateForm()">
+                            <div class="form-group">
+                                <label class="sr-only" for="usuario">Usuário:</label>
+                                <input type="text" name="usuario" id="usuario"
+                                       placeholder="Usuário" 
+                                       class="form-username form-control">
+                            </div>
+                            <div class="form-group">
+                                <label class="sr-only" for="senha">Senha:</label>
+                                <input type="password" name="senha" id="senha"
+                                       placeholder="Senha" 
+                                       class="form-username form-control">
+                            </div>
+                            <div class="form-group">
+                                <br>
+                                <button type="submit" class="btn btn-primary">Entrar</button>
+                            </div>                            
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js" integrity="sha384-IQsoLXl5PILFhosVNubq5LC7Qb9DXgDA9i+tQ8Zj3iwWAwPtgFTxbJ8NT4GN1R8p" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.min.js" integrity="sha384-cVKIPhGWiC2Al4u+LWgxfKTRIcfu0JTxR+EQDz/bgldoEyl4H0zUF0QKbrJ0EcQF" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</body>
+</html>
+<?php
+    if(!isset($_SESSION)){
+        session_start();
+    }
+    //destruir a sessão:
+    session_destroy();
+    //redirecionar para a página de login:
+    header("location:login.php");
+?>
+<?php
+session_start();
+require_once("conexao.php");
+
+if (!isset($_SESSION['cod_usuario'])) {
+    header("Location: login.php");
+    exit;
+}
+
+$cod_usuario  = $_SESSION['cod_usuario'];
+$nomeUsuario  = "";
+$emailUsuario = "";
+$sql = "SELECT * FROM usuario WHERE cod_usuario = '$cod_usuario'";
+$result = mysqli_query($conexao_bd, $sql);
+if ($consulta = mysqli_fetch_assoc($result)) {
+    $nomeUsuario  = $consulta['nome'];
+    $emailUsuario = $consulta['email'];
+}
+
+$operadorNome  = $nomeUsuario;
+$operadorEmail = $emailUsuario;
+
+/* ============================================================
+   DADOS DO MÊS ATUAL
+============================================================ */
+$mesAtual        = isset($_GET['mes']) ? max(1, min(12, (int)$_GET['mes'])) : (int)date('n');
+$anoAtual        = isset($_GET['ano']) ? (int)$_GET['ano'] : (int)date('Y');
+$nomesMeses      = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+$nomeMes         = $nomesMeses[$mesAtual];
+$primeiroDia     = mktime(0, 0, 0, $mesAtual, 1, $anoAtual);
+$diaSemanaInicio = (int)date('w', $primeiroDia);
+$totalDias       = (int)date('t', $primeiroDia);
+$diaHoje         = (int)date('j');
+$mesHoje         = (int)date('n');
+$anoHoje         = (int)date('Y');
+
+$mesAnterior = $mesAtual - 1; $anoAnterior = $anoAtual;
+if ($mesAnterior < 1)  { $mesAnterior = 12; $anoAnterior--; }
+$proximoMes  = $mesAtual + 1; $proximoAno  = $anoAtual;
+if ($proximoMes > 12) { $proximoMes  = 1;  $proximoAno++;  }
+
+/* ============================================================
+   BUSCA AGENDAMENTOS DO MÊS NO BANCO
+============================================================ */
+$agendamentosFicticios = [];
+$sql = "SELECT *, DAY(data) diaAgenda FROM vw_agendamentos
+        WHERE MONTH(data) = $mesAtual AND YEAR(data) = $anoAtual
+        ORDER BY horario ASC";
+$result = mysqli_query($conexao_bd, $sql);
+while ($row = $result->fetch_assoc()) {
+    $agendamentosFicticios[$row['diaAgenda']][] = [
+        'id'            => $row['id'],
+        'horario'       => date('H:i', strtotime($row['horario'])),
+        'paciente'      => $row['paciente'],
+        'medico'        => $row['medico'],
+        'medico_id'     => $row['medico_id'],       // necessário para o modal de edição
+        'especialidade' => $row['especialidade'],
+        'status'        => $row['status'],
+        'data_iso'      => $row['data'],             // formato YYYY-MM-DD para o input date
+    ];
+}
+
+/* ============================================================
+   BUSCA MÉDICOS PARA O SELECT DO MODAL DE EDIÇÃO
+============================================================ */
+$medicosSelect = [];
+$resMed = mysqli_query($conexao_bd, "SELECT m.id, m.nome, e.nome AS esp_nome
+                                      FROM medicos m
+                                      JOIN especialidades e ON m.especialidade_id = e.id
+                                      WHERE m.status = 'Ativo'
+                                      ORDER BY m.nome");
+while ($row = mysqli_fetch_assoc($resMed)) {
+    $medicosSelect[] = $row;
+}
+?>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediAgenda - Painel Principal</title>
+    <link rel="icon" type="image/x-icon" href="img/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --azul-primario: #0d6efd;
+            --azul-escuro:   #084298;
+            --azul-claro:    #e7f1ff;
+            --cinza-fundo:   #f5f7fa;
+            --cinza-borda:   #e3e6ea;
+            --texto-escuro:  #1f2d3d;
+            --sidebar-larg:  250px;
+        }
+        body { background-color: var(--cinza-fundo); font-family: 'Segoe UI', Tahoma, sans-serif; color: var(--texto-escuro); overflow-x: hidden; }
+
+        /* NAVBAR */
+        .navbar-topo { background: linear-gradient(90deg, var(--azul-primario) 0%, var(--azul-escuro) 100%); height: 60px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: fixed; top: 0; left: 0; right: 0; z-index: 1030; }
+        .navbar-topo .navbar-brand { color: #fff; font-weight: 600; font-size: 1.25rem; }
+        .navbar-topo .navbar-brand i { margin-right: 8px; }
+        .btn-sanduiche { background: transparent; border: none; color: #fff; font-size: 1.3rem; padding: 6px 12px; border-radius: 6px; transition: background 0.2s; }
+        .btn-sanduiche:hover { background: rgba(255,255,255,0.15); }
+        .operador-toggle { background: transparent; border: none; color: #fff; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 30px; transition: background 0.2s; }
+        .operador-toggle:hover, .operador-toggle:focus { background: rgba(255,255,255,0.15); color: #fff; }
+        .operador-toggle i.fa-circle-user { font-size: 1.6rem; }
+        .dropdown-menu-operador { min-width: 220px; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); border: none; }
+        .dropdown-menu-operador .dropdown-item i { width: 22px; color: var(--azul-primario); }
+
+        /* SIDEBAR */
+        .sidebar { position: fixed; top: 60px; left: 0; width: var(--sidebar-larg); height: calc(100vh - 60px); background: #fff; border-right: 1px solid var(--cinza-borda); padding: 20px 0; transition: transform 0.3s ease; z-index: 1020; overflow-y: auto; }
+        .sidebar.oculta { transform: translateX(calc(var(--sidebar-larg) * -1)); }
+        .sidebar .nav-link { color: var(--texto-escuro); padding: 12px 20px; border-left: 3px solid transparent; transition: all 0.2s; display: flex; align-items: center; gap: 12px; }
+        .sidebar .nav-link i { width: 22px; color: var(--azul-primario); font-size: 1.05rem; }
+        .sidebar .nav-link:hover { background: var(--azul-claro); border-left-color: var(--azul-primario); color: var(--azul-escuro); }
+        .sidebar .nav-link.ativo { background: var(--azul-claro); border-left-color: var(--azul-primario); color: var(--azul-escuro); font-weight: 600; }
+        .sidebar-overlay { display: none; position: fixed; top: 60px; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 1010; }
+        .sidebar-overlay.ativo { display: block; }
+
+        /* CONTEÚDO */
+        .conteudo-principal { margin-top: 60px; margin-left: var(--sidebar-larg); padding: 25px; transition: margin-left 0.3s ease; min-height: calc(100vh - 60px); }
+        .conteudo-principal.expandido { margin-left: 0; }
+        @media (max-width: 991.98px) {
+            .sidebar { transform: translateX(calc(var(--sidebar-larg) * -1)); }
+            .sidebar.aberta { transform: translateX(0); box-shadow: 2px 0 12px rgba(0,0,0,0.15); }
+            .conteudo-principal { margin-left: 0; }
+        }
+
+        /* CALENDÁRIO */
+        .card-calendario { background: #fff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid var(--cinza-borda); overflow: hidden; }
+        .calendario-cabecalho { display: flex; justify-content: space-between; align-items: center; padding: 18px 22px; border-bottom: 1px solid var(--cinza-borda); flex-wrap: wrap; gap: 10px; }
+        .calendario-cabecalho h4 { margin: 0; color: var(--azul-escuro); font-weight: 600; text-transform: capitalize; }
+        .calendario-cabecalho .btn-nav { border: 1px solid var(--cinza-borda); background: #fff; color: var(--texto-escuro); padding: 6px 12px; border-radius: 6px; transition: all 0.2s; text-decoration: none; }
+        .calendario-cabecalho .btn-nav:hover { background: var(--azul-claro); color: var(--azul-primario); border-color: var(--azul-primario); }
+        .calendario-grade { display: grid; grid-template-columns: repeat(7, 1fr); background: var(--cinza-borda); gap: 1px; }
+        .calendario-grade .dia-semana { background: #fafbfc; text-align: center; padding: 10px 4px; font-weight: 600; font-size: 0.85rem; color: #6c757d; text-transform: uppercase; letter-spacing: 0.5px; }
+        .calendario-grade .dia { background: #fff; min-height: 120px; padding: 8px; position: relative; transition: background 0.15s; display: flex; flex-direction: column; }
+        .calendario-grade .dia:hover { background: #fafbfc; }
+        .calendario-grade .dia.vazio { background: #f8f9fa; }
+        .calendario-grade .dia .numero { font-weight: 600; font-size: 0.95rem; color: var(--texto-escuro); margin-bottom: 4px; }
+        .calendario-grade .dia.hoje .numero { background: var(--azul-primario); color: #fff; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+        .card-agendamento { background: var(--azul-claro); border-left: 3px solid var(--azul-primario); border-radius: 4px; padding: 4px 6px; margin-bottom: 3px; font-size: 0.75rem; cursor: pointer; transition: all 0.15s; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .card-agendamento:hover { background: var(--azul-primario); color: #fff; transform: translateX(2px); }
+        .card-agendamento .horario { font-weight: 600; }
+        .card-agendamento .paciente { display: block; overflow: hidden; text-overflow: ellipsis; }
+        .link-mais { font-size: 0.72rem; color: var(--azul-primario); cursor: pointer; font-weight: 600; margin-top: 2px; display: inline-block; }
+        .link-mais:hover { text-decoration: underline; }
+
+        /* MODAL DETALHES */
+        .modal-detalhe .modal-header { background: var(--azul-primario); color: #fff; }
+        .modal-detalhe .modal-header .btn-close { filter: invert(1); }
+        .modal-detalhe .info-item { padding: 10px 0; border-bottom: 1px solid var(--cinza-borda); display: flex; align-items: center; gap: 12px; }
+        .modal-detalhe .info-item:last-child { border-bottom: none; }
+        .modal-detalhe .info-item i { color: var(--azul-primario); width: 22px; font-size: 1.05rem; }
+        .modal-detalhe .info-item strong { color: #6c757d; font-weight: 500; margin-right: 8px; }
+
+        /* MODAL EDIÇÃO */
+        .modal-form .modal-header { background: var(--azul-primario); color: #fff; }
+        .modal-form .modal-header .btn-close { filter: invert(1); }
+        .modal-form label { font-weight: 500; font-size: 0.88rem; margin-bottom: 4px; }
+
+        /* MODAL LISTA DO DIA */
+        .modal-lista .modal-header { background: var(--azul-escuro); color: #fff; }
+        .modal-lista .modal-header .btn-close { filter: invert(1); }
+        .item-lista-dia { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--cinza-borda); gap: 10px; }
+        .item-lista-dia:last-child { border-bottom: none; }
+        .item-lista-dia .info { flex: 1; }
+        .item-lista-dia .info .paciente-nome { font-weight: 600; font-size: 0.9rem; }
+        .item-lista-dia .info .detalhes { font-size: 0.8rem; color: #6c757d; }
+        .badge-status { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+        .badge-confirmado { background: #d1e7dd; color: #0a3622; }
+        .badge-pendente   { background: #fff3cd; color: #664d03; }
+        .badge-cancelado  { background: #f8d7da; color: #58151c; }
+    </style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar-topo d-flex align-items-center justify-content-between px-3">
+    <div class="d-flex align-items-center gap-2">
+        <button class="btn-sanduiche" id="btnSanduiche" title="Menu">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+        <a class="navbar-brand mb-0 d-flex align-items-center" href="#">
+            <i class="fa-solid fa-stethoscope"></i>
+            <span>MediAgenda</span>
+        </a>
+    </div>
+    <div class="dropdown">
+        <button class="operador-toggle" type="button" id="dropdownOperador" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="fa-solid fa-circle-user"></i>
+            <span class="d-none d-md-inline"><?php echo htmlspecialchars($operadorNome); ?></span>
+            <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem;"></i>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end dropdown-menu-operador" aria-labelledby="dropdownOperador">
+            <li><a class="dropdown-item" href="#"><i class="fa-solid fa-user"></i><?php echo htmlspecialchars($operadorNome) ?></a></li>
+            <li><a class="dropdown-item" href="#"><i class="fa-solid fa-envelope"></i><?php echo htmlspecialchars($operadorEmail) ?></a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="#"><i class="fa-solid fa-gear"></i>Configurações</a></li>
+            <li><a class="dropdown-item" href="logout.php"><i class="fa-solid fa-right-from-bracket"></i>Sair</a></li>
+        </ul>
+    </div>
+</nav>
+
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+    <ul class="nav flex-column">
+        <li class="nav-item"><a class="nav-link ativo" href="principal.php"><i class="fa-solid fa-calendar-days"></i> Calendário</a></li>
+        <li class="nav-item"><a class="nav-link" href="cadastro_agendas.php"><i class="fa-solid fa-calendar-plus"></i> Agendamentos</a></li>
+        <li class="nav-item"><a class="nav-link" href="cadastro_medicos.php"><i class="fa-solid fa-user-doctor"></i> Cadastro de Médicos</a></li>
+        <li class="nav-item"><a class="nav-link" href="cadastro_especialidades.php"><i class="fa-solid fa-list-check"></i> Cadastro de Especialidades</a></li>
+    </ul>
+</aside>
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<!-- CONTEÚDO PRINCIPAL -->
+<main class="conteudo-principal" id="conteudoPrincipal">
+    <div class="card-calendario">
+
+        <!-- Cabeçalho com navegação de mês -->
+        <div class="calendario-cabecalho">
+            <h4><?php echo $nomeMes ?> <?php echo $anoAtual ?></h4>
+            <div class="d-flex gap-2">
+                <a class="btn-nav" href="?mes=<?php echo $mesAnterior ?>&ano=<?php echo $anoAnterior ?>" title="Mês anterior">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </a>
+                <a class="btn-nav" href="?" title="Hoje">Hoje</a>
+                <a class="btn-nav" href="?mes=<?php echo $proximoMes ?>&ano=<?php echo $proximoAno ?>" title="Próximo mês">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </a>
+            </div>
+        </div>
+
+        <!-- Grade -->
+        <div class="calendario-grade">
+            <div class="dia-semana">Dom</div>
+            <div class="dia-semana">Seg</div>
+            <div class="dia-semana">Ter</div>
+            <div class="dia-semana">Qua</div>
+            <div class="dia-semana">Qui</div>
+            <div class="dia-semana">Sex</div>
+            <div class="dia-semana">Sáb</div>
+
+            <?php for ($i = 0; $i < $diaSemanaInicio; $i++): ?>
+                <div class="dia vazio"></div>
+            <?php endfor; ?>
+
+            <?php for ($dia = 1; $dia <= $totalDias; $dia++):
+                $classeHoje        = ($dia === $diaHoje && $mesAtual === $mesHoje && $anoAtual === $anoHoje) ? 'hoje' : '';
+                $agendamentosDoDia = isset($agendamentosFicticios[$dia]) ? $agendamentosFicticios[$dia] : [];
+                $maxExibir         = 3;
+                $totalAgend        = count($agendamentosDoDia);
+                $exibir            = array_slice($agendamentosDoDia, 0, $maxExibir);
+                // Serializa todos os agendamentos do dia para o botão "+ N mais"
+                $todosDoDia = htmlspecialchars(json_encode($agendamentosDoDia), ENT_QUOTES, 'UTF-8');
+                $dataFormatada = sprintf('%02d/%02d/%d', $dia, $mesAtual, $anoAtual);
+            ?>
+            <div class="dia <?php echo $classeHoje ?>">
+                <span class="numero"><?php echo $dia ?></span>
+
+                <?php foreach ($exibir as $agend): ?>
+                    <div class="card-agendamento"
+                         data-id="<?php echo $agend['id'] ?>"
+                         data-horario="<?php echo htmlspecialchars($agend['horario']) ?>"
+                         data-paciente="<?php echo htmlspecialchars($agend['paciente']) ?>"
+                         data-medico="<?php echo htmlspecialchars($agend['medico']) ?>"
+                         data-medico-id="<?php echo $agend['medico_id'] ?>"
+                         data-especialidade="<?php echo htmlspecialchars($agend['especialidade']) ?>"
+                         data-status="<?php echo htmlspecialchars($agend['status']) ?>"
+                         data-data="<?php echo $dataFormatada ?>"
+                         data-data-iso="<?php echo $agend['data_iso'] ?>">
+                        <span class="horario"><?php echo htmlspecialchars($agend['horario']) ?></span>
+                        <span class="paciente"><?php echo htmlspecialchars($agend['paciente']) ?></span>
+                    </div>
+                <?php endforeach; ?>
+
+                <?php if ($totalAgend > $maxExibir): ?>
+                    <span class="link-mais"
+                          data-dia="<?php echo $dataFormatada ?>"
+                          data-agendamentos="<?php echo $todosDoDia ?>">
+                        + <?php echo $totalAgend - $maxExibir ?> mais
+                    </span>
+                <?php endif; ?>
+            </div>
+            <?php endfor; ?>
+        </div>
+    </div>
+</main>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL 1 — DETALHES DO AGENDAMENTO (clique no card)
+══════════════════════════════════════════════════════════ -->
+<div class="modal fade modal-detalhe" id="modalAgendamento" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fa-solid fa-calendar-check me-2"></i>Detalhes do Agendamento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="info-item"><i class="fa-solid fa-user"></i><div><strong>Paciente:</strong> <span id="modalPaciente"></span></div></div>
+                <div class="info-item"><i class="fa-solid fa-user-doctor"></i><div><strong>Médico:</strong> <span id="modalMedico"></span></div></div>
+                <div class="info-item"><i class="fa-solid fa-stethoscope"></i><div><strong>Especialidade:</strong> <span id="modalEspecialidade"></span></div></div>
+                <div class="info-item"><i class="fa-solid fa-calendar"></i><div><strong>Data:</strong> <span id="modalData"></span></div></div>
+                <div class="info-item"><i class="fa-solid fa-clock"></i><div><strong>Horário:</strong> <span id="modalHorario"></span></div></div>
+                <div class="info-item"><i class="fa-solid fa-circle-info"></i><div><strong>Status:</strong> <span id="modalStatus"></span></div></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger" id="btnCancelarAgendamento">
+                    <i class="fa-solid fa-ban me-1"></i> Cancelar
+                </button>
+                <button type="button" class="btn btn-primary" id="btnEditarAgendamento">
+                    <i class="fa-solid fa-pen me-1"></i> Editar
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL 2 — LISTA DO DIA (clique em "+ N mais")
+══════════════════════════════════════════════════════════ -->
+<div class="modal fade modal-lista" id="modalListaDia" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalListaTitulo">
+                    <i class="fa-solid fa-calendar-days me-2"></i>Agendamentos do dia
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body" id="modalListaCorpo">
+                <!-- preenchido via JS -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL 3 — FORMULÁRIO DE EDIÇÃO (abre ao clicar "Editar")
+══════════════════════════════════════════════════════════ -->
+<div class="modal fade modal-form" id="modalEditarAgenda" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fa-solid fa-pen me-2"></i>Editar Agendamento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <form id="formEditar" action="cadastro_agendas.php" method="POST">
+                <input type="hidden" name="acao" value="editar">
+                <input type="hidden" name="id"   id="editId">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label for="editPaciente">Paciente <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="editPaciente" name="paciente" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editMedico">Médico <span class="text-danger">*</span></label>
+                            <select class="form-select" id="editMedico" name="medico_id" required>
+                                <option value="">Selecione...</option>
+                                <?php foreach ($medicosSelect as $m): ?>
+                                    <option value="<?php echo $m['id'] ?>"
+                                            data-esp="<?php echo htmlspecialchars($m['esp_nome']) ?>">
+                                        <?php echo htmlspecialchars($m['nome']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editEspecialidadeNome">Especialidade</label>
+                            <input type="text" class="form-control" id="editEspecialidadeNome" placeholder="Auto-preenchido" readonly>
+                            <input type="hidden" id="editEspecialidadeId" name="especialidade" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editData">Data <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" id="editData" name="data" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editHorario">Horário <span class="text-danger">*</span></label>
+                            <input type="time" class="form-control" id="editHorario" name="horario" required>
+                        </div>
+                        <div class="col-12">
+                            <label for="editStatus">Status</label>
+                            <select class="form-select" id="editStatus" name="status">
+                                <option value="Pendente">Pendente</option>
+                                <option value="Confirmado">Confirmado</option>
+                                <option value="Cancelado">Cancelado</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-floppy-disk me-1"></i> Salvar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- SCRIPTS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+    // ── SIDEBAR ─────────────────────────────────────────────────────────────────
+    const btnSanduiche      = document.getElementById('btnSanduiche');
+    const sidebar           = document.getElementById('sidebar');
+    const conteudoPrincipal = document.getElementById('conteudoPrincipal');
+    const sidebarOverlay    = document.getElementById('sidebarOverlay');
+
+    btnSanduiche.addEventListener('click', () => {
+        if (window.innerWidth <= 991.98) {
+            sidebar.classList.toggle('aberta');
+            sidebarOverlay.classList.toggle('ativo');
+        } else {
+            sidebar.classList.toggle('oculta');
+            conteudoPrincipal.classList.toggle('expandido');
+        }
+    });
+    sidebarOverlay.addEventListener('click', () => { sidebar.classList.remove('aberta'); sidebarOverlay.classList.remove('ativo'); });
+    window.addEventListener('resize', () => { if (window.innerWidth > 991.98) { sidebar.classList.remove('aberta'); sidebarOverlay.classList.remove('ativo'); } });
+
+    // ── INSTÂNCIAS DOS MODAIS ────────────────────────────────────────────────────
+    const modalAgendamento = new bootstrap.Modal(document.getElementById('modalAgendamento'));
+    const modalListaDia    = new bootstrap.Modal(document.getElementById('modalListaDia'));
+    const modalEditarEl    = document.getElementById('modalEditarAgenda');
+    const modalEditar      = new bootstrap.Modal(modalEditarEl);
+
+    // Agendamento selecionado no momento (usado para cancelar e editar)
+    let agendamentoAtual = {};
+
+    // ── HELPER: abre o modal de detalhes com os dados de um agendamento ──────────
+    function abrirModalDetalhe(dados) {
+        agendamentoAtual = dados;
+        document.getElementById('modalPaciente').textContent      = dados.paciente;
+        document.getElementById('modalMedico').textContent        = dados.medico;
+        document.getElementById('modalEspecialidade').textContent = dados.especialidade;
+        document.getElementById('modalData').textContent          = dados.data;
+        document.getElementById('modalHorario').textContent       = dados.horario;
+        document.getElementById('modalStatus').textContent        = dados.status;
+        modalAgendamento.show();
+    }
+
+    // ── CLIQUE NOS CARDS DO CALENDÁRIO ──────────────────────────────────────────
+    document.querySelectorAll('.card-agendamento').forEach(card => {
+        card.addEventListener('click', () => {
+            abrirModalDetalhe({
+                id:            card.dataset.id,
+                paciente:      card.dataset.paciente,
+                medico:        card.dataset.medico,
+                medicoId:      card.dataset.medicoId,
+                especialidade: card.dataset.especialidade,
+                status:        card.dataset.status,
+                data:          card.dataset.data,
+                dataIso:       card.dataset.dataIso,
+                horario:       card.dataset.horario,
+            });
+        });
+    });
+
+    // ── BOTÃO EDITAR no modal de detalhes ────────────────────────────────────────
+    document.getElementById('btnEditarAgendamento').addEventListener('click', () => {
+        // Fecha o modal de detalhes e abre o de edição com os dados preenchidos
+        modalAgendamento.hide();
+
+        document.getElementById('editId').value       = agendamentoAtual.id;
+        document.getElementById('editPaciente').value = agendamentoAtual.paciente;
+        document.getElementById('editData').value     = agendamentoAtual.dataIso;   // YYYY-MM-DD
+        document.getElementById('editHorario').value  = agendamentoAtual.horario;
+        document.getElementById('editStatus').value   = agendamentoAtual.status;
+
+        // Seleciona o médico correto e preenche a especialidade
+        const sel = document.getElementById('editMedico');
+        for (let i = 0; i < sel.options.length; i++) {
+            if (sel.options[i].text === agendamentoAtual.medico) {
+                sel.selectedIndex = i;
+                break;
+            }
+        }
+        const espNome = sel.options[sel.selectedIndex]?.getAttribute('data-esp') || agendamentoAtual.especialidade;
+        document.getElementById('editEspecialidadeNome').value = espNome;
+        document.getElementById('editEspecialidadeId').value   = espNome;
+
+        // Aguarda o modal de detalhes fechar antes de abrir o de edição
+        document.getElementById('modalAgendamento').addEventListener('hidden.bs.modal', function handler() {
+            modalEditar.show();
+            this.removeEventListener('hidden.bs.modal', handler);
+        });
+    });
+
+    // Auto-preenche especialidade ao trocar médico no form de edição
+    document.getElementById('editMedico').addEventListener('change', function () {
+        const esp = this.options[this.selectedIndex]?.getAttribute('data-esp') || '';
+        document.getElementById('editEspecialidadeNome').value = esp;
+        document.getElementById('editEspecialidadeId').value   = esp;
+    });
+
+    // ── BOTÃO CANCELAR no modal de detalhes ──────────────────────────────────────
+    document.getElementById('btnCancelarAgendamento').addEventListener('click', () => {
+        Swal.fire({
+            title: 'Cancelar agendamento?',
+            html:  'Deseja cancelar o agendamento de <strong>' + agendamentoAtual.paciente + '</strong>' +
+                   '<br>Data: ' + agendamentoAtual.data + ' às ' + agendamentoAtual.horario + '?',
+            icon: 'warning',
+            showCancelButton:   true,
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor:  '#6c757d',
+            confirmButtonText:  'Sim, cancelar',
+            cancelButtonText:   'Voltar'
+        }).then(result => {
+            if (!result.isConfirmed) return;
+
+            fetch('cancelar_agendamento.php', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body:    'id=' + agendamentoAtual.id
+            })
+            .then(r => r.json())
+            .then(dados => {
+                if (!dados.sucesso) {
+                    Swal.fire({ icon: 'error', title: 'Erro', text: dados.mensagem || 'Não foi possível cancelar.', confirmButtonColor: '#0d6efd' });
+                    return;
+                }
+                // Remove o card do calendário sem recarregar
+                const card = document.querySelector('.card-agendamento[data-id="' + agendamentoAtual.id + '"]');
+                if (card) card.remove();
+
+                modalAgendamento.hide();
+                Swal.fire({
+                    icon: 'success', title: 'Cancelado!',
+                    text: 'O agendamento foi cancelado com sucesso.',
+                    confirmButtonColor: '#0d6efd',
+                    timer: 1800, showConfirmButton: false
+                }).then(() => window.location.reload());
+            })
+            .catch(() => {
+                Swal.fire({ icon: 'error', title: 'Erro de comunicação', text: 'Não foi possível conectar ao servidor.', confirmButtonColor: '#0d6efd' });
+            });
+        });
+    });
+
+    // ── CLIQUE EM "+ N MAIS" → MODAL LISTA DO DIA ────────────────────────────────
+    document.querySelectorAll('.link-mais').forEach(link => {
+        link.addEventListener('click', () => {
+            const dia          = link.dataset.dia;
+            const agendamentos = JSON.parse(link.dataset.agendamentos);
+
+            document.getElementById('modalListaTitulo').innerHTML =
+                '<i class="fa-solid fa-calendar-days me-2"></i>Agendamentos de ' + dia;
+
+            const corpo = document.getElementById('modalListaCorpo');
+            corpo.innerHTML = '';
+
+            agendamentos.forEach(ag => {
+                // Classe do badge
+                let badgeClass = 'badge-cancelado';
+                if (ag.status === 'Confirmado') badgeClass = 'badge-confirmado';
+                if (ag.status === 'Pendente')   badgeClass = 'badge-pendente';
+
+                const item = document.createElement('div');
+                item.className = 'item-lista-dia';
+                item.innerHTML = `
+                    <div class="info">
+                        <div class="paciente-nome">${ag.paciente}</div>
+                        <div class="detalhes">
+                            <i class="fa-solid fa-clock me-1"></i>${ag.horario} &nbsp;|&nbsp;
+                            <i class="fa-solid fa-user-doctor me-1"></i>${ag.medico} &nbsp;|&nbsp;
+                            <i class="fa-solid fa-stethoscope me-1"></i>${ag.especialidade}
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge-status ${badgeClass}">${ag.status}</span>
+                        <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                                title="Ver detalhes"
+                                onclick="verDetalhesDaLista(${JSON.stringify(ag).replace(/"/g, '&quot;')}, '${dia}')">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                    </div>
+                `;
+                corpo.appendChild(item);
+            });
+
+            modalListaDia.show();
+        });
+    });
+
+    // Abre o modal de detalhes a partir da lista do dia
+    function verDetalhesDaLista(ag, diaFormatado) {
+        modalListaDia.hide();
+        document.getElementById('modalListaDia').addEventListener('hidden.bs.modal', function handler() {
+            abrirModalDetalhe({
+                id:            ag.id,
+                paciente:      ag.paciente,
+                medico:        ag.medico,
+                medicoId:      ag.medico_id,
+                especialidade: ag.especialidade,
+                status:        ag.status,
+                data:          diaFormatado,
+                dataIso:       ag.data_iso,
+                horario:       ag.horario,
+            });
+            this.removeEventListener('hidden.bs.modal', handler);
+        });
+    }
+</script>
+</body>
+</html>
