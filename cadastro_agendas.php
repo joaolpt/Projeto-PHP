@@ -39,139 +39,91 @@ $operadorEmail = $emailUsuario;
    - horario     : 'HH:MM'
    - status      : 'Confirmado' | 'Pendente'
 */
-echo (">>> passou 0 | " . $_SERVER['REQUEST_METHOD']);
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        echo (">>> passou 1");
-        $acao = isset($_POST['acao']) ? $_POST['acao'] : '';
-        if ($acao === 'novo') {
-            $paciente      = $_POST['paciente'];
-            $medico_id     = $_POST['medico_id'];
-            $especialidade = $_POST['especialidade'];
-            $data          = $_POST['data'];
-            $horario       = $_POST['horario'];
-            $status        = $_POST['status'];
-            $sql           = "INSERT INTO 
-                              agendamentos(paciente, medico_id, especialidade_id, data, horario, status) 
-                              VALUES('".$paciente."', ".$medico_id.", 1, '".$data."',
-                              '".$horario."', '".$status."')";
-            mysqli_query($conexao_bd, $sql) or die('ERR: '.mysql_error());
-           // INSERT INTO agendamentos (...) VALUES (...)
-        } elseif ($acao === 'editar') {
-            $paciente      = $_POST['paciente'];
-            $medico_id     = $_POST['medico_id'];
-            $especialidade = $_POST['especialidade'];
-            $data          = $_POST['data'];
-            $horario       = $_POST['horario'];
-            $status        = $_POST['status'];
-            $id_agenda     = $_POST['id'];
-            $sql = "UPDATE agendamentos SET 
-                     paciente = '".$paciente."',
-                     medico_id = ".$medico_id.",
-                     especialidade_id = 1, 
-                     data = '".$data."',
-                     horario = '".$horario."',
-                     status  = '".$status."'
-                    WHERE id = ".$id_agenda;
-            mysqli_query($conexao_bd, $sql) or die("ERR.: ".mysql_error());
-        } elseif ($acao === 'cancelar') {
-            $id_agenda     = $_POST['id'];
-            $sql = "DELETE FROM agendamentos WHERE id = ".$id_agenda;
-            mysqli_query($conexao_bd, $sql) or die("ERR.: ".mysql_error());
-           // UPDATE agendamentos SET status = 'Cancelado' WHERE id = ?
-       }
-       //header("Location: cadastro_agendas.php");
-       //exit;
-    }
-//============================================================ */
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    global $conexao_bd;
+    $acao = isset($_POST['acao']) ? $_POST['acao'] : '';
 
-/* ============================================================
-   FILTROS DE BUSCA
-   TODO: Usar estes valores para montar a query no banco
-   Exemplo: WHERE data BETWEEN :dataInicio AND :dataFim
-            AND (medico_id = :medico OR :medico IS NULL)
-            AND (status = :status OR :status IS NULL)
-============================================================ */
+    if ($acao === 'novo' || $acao === 'editar') {
+        $paciente      = $_POST['paciente'];
+        $medico_id     = (int)$_POST['medico_id']; // Forçamos o tipo inteiro
+        $esp_nome      = trim($_POST['especialidade']);
+        $data          = $_POST['data'];
+        $horario       = $_POST['horario'];
+        $status        = $_POST['status'];
+
+        // Busca o ID da especialidade pelo nome
+        $stmtEsp = $conexao_bd->prepare("SELECT id FROM especialidades WHERE nome = ? LIMIT 1");
+        $stmtEsp->bind_param("s", $esp_nome);
+        $stmtEsp->execute();
+        $resEsp = $stmtEsp->get_result();
+        $esp_row = $resEsp->fetch_assoc();
+        $especialidade_id = $esp_row ? $esp_row['id'] : 1;
+        $stmtEsp->close();
+
+        if ($acao === 'novo') {
+            $sql = "INSERT INTO agendamentos (paciente, medico_id, especialidade_id, data, horario, status) VALUES (?, ?, ?, ?, ?, ?)";
+            $stmt = $conexao_bd->prepare($sql);
+            // "sissss" -> s=string, i=int, s=string, etc.
+            $stmt->bind_param("siisss", $paciente, $medico_id, $especialidade_id, $data, $horario, $status);
+            $stmt->execute();
+            $stmt->close();
+        } else {
+            $id_agenda = (int)$_POST['id'];
+            $sql = "UPDATE agendamentos SET paciente = ?, medico_id = ?, especialidade_id = ?, data = ?, horario = ?, status = ? WHERE id = ?";
+            $stmt = $conexao_bd->prepare($sql);
+            $stmt->bind_param("siisssi", $paciente, $medico_id, $especialidade_id, $data, $horario, $status, $id_agenda);
+            $stmt->execute();
+            $stmt->close();
+        }
+    } 
+    elseif ($acao === 'cancelar') {
+        $id_agenda = (int)$_POST['id'];
+        $stmt = $conexao_bd->prepare("UPDATE agendamentos SET status = 'Cancelado' WHERE id = ?");
+        $stmt->bind_param("i", $id_agenda);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    header("Location: cadastro_agendas.php");
+    exit;
+}
+?>
+
+
+<?php
+// 1. Inicializa o array para evitar erros de "Undefined variable"
+$agendamentos = [];
+
+// 2. Busca os filtros da URL
 $filtroPaciente = trim(isset($_GET['paciente']) ? $_GET['paciente'] : '');
 $filtroMedico   = trim(isset($_GET['medico'])   ? $_GET['medico']   : '');
 $filtroStatus   = trim(isset($_GET['status'])   ? $_GET['status']   : '');
 $filtroDataIni  = trim(isset($_GET['data_ini']) ? $_GET['data_ini'] : '');
 $filtroDataFim  = trim(isset($_GET['data_fim']) ? $_GET['data_fim'] : '');
 
-/* ============================================================
-   AGENDAMENTOS FICTÍCIOS (placeholder para visualização)
-   REMOVER QUANDO INTEGRAR COM O BANCO DE DADOS
-   TODO: Substituir por:
-   $agendamentos = buscarAgendamentos($filtroPaciente, $filtroMedico, $filtroStatus, $filtroDataIni, $filtroDataFim);
-============================================================ 
-$agendamentos = [
-    ['id' =>  1, 'data' => '2026-04-05', 'horario' => '09:00', 'paciente' => 'Maria Souza',     'medico' => 'Dr. Carlos Lima',  'especialidade' => 'Cardiologia',  'status' => 'Confirmado'],
-    ['id' =>  2, 'data' => '2026-04-08', 'horario' => '10:30', 'paciente' => 'Carlos Andrade',  'medico' => 'Dra. Ana Paula',   'especialidade' => 'Dermatologia', 'status' => 'Confirmado'],
-    ['id' =>  3, 'data' => '2026-04-08', 'horario' => '14:00', 'paciente' => 'Juliana Reis',    'medico' => 'Dr. Pedro Alves',  'especialidade' => 'Ortopedia',    'status' => 'Pendente'],
-    ['id' =>  4, 'data' => '2026-04-12', 'horario' => '08:00', 'paciente' => 'Pedro Henrique',  'medico' => 'Dra. Ana Paula',   'especialidade' => 'Dermatologia', 'status' => 'Confirmado'],
-    ['id' =>  5, 'data' => '2026-04-15', 'horario' => '11:00', 'paciente' => 'Júlia Mendes',    'medico' => 'Dr. Carlos Lima',  'especialidade' => 'Cardiologia',  'status' => 'Confirmado'],
-    ['id' =>  6, 'data' => '2026-04-15', 'horario' => '15:30', 'paciente' => 'Roberto Dias',    'medico' => 'Dr. Pedro Alves',  'especialidade' => 'Ortopedia',    'status' => 'Confirmado'],
-    ['id' =>  7, 'data' => '2026-04-15', 'horario' => '16:30', 'paciente' => 'Fernanda Costa',  'medico' => 'Dra. Marina Reis', 'especialidade' => 'Pediatria',    'status' => 'Pendente'],
-    ['id' =>  8, 'data' => '2026-04-15', 'horario' => '17:30', 'paciente' => 'Lucas Silva',     'medico' => 'Dr. Carlos Lima',  'especialidade' => 'Cardiologia',  'status' => 'Confirmado'],
-    ['id' =>  9, 'data' => '2026-04-20', 'horario' => '09:30', 'paciente' => 'Luiz Henrique',   'medico' => 'Dra. Marina Reis', 'especialidade' => 'Pediatria',    'status' => 'Confirmado'],
-    ['id' => 10, 'data' => '2026-04-23', 'horario' => '10:00', 'paciente' => 'Beatriz Ramos',   'medico' => 'Dra. Ana Paula',   'especialidade' => 'Dermatologia', 'status' => 'Pendente'],
-    ['id' => 11, 'data' => '2026-04-27', 'horario' => '14:00', 'paciente' => 'Marcos Vinícius', 'medico' => 'Dr. Pedro Alves',  'especialidade' => 'Ortopedia',    'status' => 'Confirmado'],
-];*/
-$sql = "SELECT * FROM vw_agendamentos";
+// 3. Monta a query SQL com filtros (se existirem)
+$sql = "SELECT * FROM vw_agendamentos WHERE 1=1";
+
+if ($filtroPaciente !== '') $sql .= " AND paciente LIKE '%$filtroPaciente%'";
+if ($filtroMedico !== '')   $sql .= " AND medico = '$filtroMedico'";
+if ($filtroStatus !== '')   $sql .= " AND status = '$filtroStatus'";
+if ($filtroDataIni !== '')  $sql .= " AND data >= '$filtroDataIni'";
+if ($filtroDataFim !== '')  $sql .= " AND data <= '$filtroDataFim'";
+
+// 4. Executa a consulta
 $result = mysqli_query($conexao_bd, $sql);
-while ($row = mysqli_fetch_assoc($result)) {
-    $agendamentos[] = [
-        'id'            => $row['id'],
-        'data'          => $row['data'],
-        'horario'       => $row['horario'],
-        'paciente'      => $row['paciente'],
-        'medico'        => $row['medico'],
-        'especialidade' => $row['especialidade'],
-        'status'        => $row['status']
-    ];
+if ($result) {
+    while ($row = mysqli_fetch_assoc($result)) {
+        $agendamentos[] = $row;
+    }
 }
 
-
-/* ============================================================
-   APLICAÇÃO DOS FILTROS NOS DADOS FICTÍCIOS
-   TODO: Remover este bloco ao integrar com o banco —
-         a filtragem passará a ser feita diretamente na query SQL
-============================================================ */
-if ($filtroPaciente !== '' || $filtroMedico !== '' || $filtroStatus !== ''
-    || $filtroDataIni !== '' || $filtroDataFim !== '') {
-
-    $agendamentos = array_values(array_filter($agendamentos, function($ag) use (
-        $filtroPaciente, $filtroMedico, $filtroStatus, $filtroDataIni, $filtroDataFim
-    ) {
-        if ($filtroPaciente !== '' && stripos($ag['paciente'], $filtroPaciente) === false) {
-            return false;
-        }
-        if ($filtroMedico !== '' && $ag['medico'] !== $filtroMedico) {
-            return false;
-        }
-        if ($filtroStatus !== '' && $ag['status'] !== $filtroStatus) {
-            return false;
-        }
-        if ($filtroDataIni !== '' && $ag['data'] < $filtroDataIni) {
-            return false;
-        }
-        if ($filtroDataFim !== '' && $ag['data'] > $filtroDataFim) {
-            return false;
-        }
-        return true;
-    }));
+// 5. Busca médicos do banco para o select de filtros (substituindo o array fixo)
+$medicos = [];
+$resMed = mysqli_query($conexao_bd, "SELECT id, nome FROM medicos");
+while ($row = mysqli_fetch_assoc($resMed)) {
+    $medicos[] = $row;
 }
-
-/* ============================================================
-   MÉDICOS DISPONÍVEIS
-   TODO: Substituir por consulta ao banco:
-   $medicos = buscarMedicos();
-============================================================ */
-$medicos = [
-    ['id' => 1, 'nome' => 'Dr. Carlos Lima',  'especialidade' => 'Cardiologia'],
-    ['id' => 2, 'nome' => 'Dra. Ana Paula',   'especialidade' => 'Dermatologia'],
-    ['id' => 3, 'nome' => 'Dr. Pedro Alves',  'especialidade' => 'Ortopedia'],
-    ['id' => 4, 'nome' => 'Dra. Marina Ana Reis', 'especialidade' => 'Pediatria'],
-];
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -718,20 +670,29 @@ $medicos = [
                             </div>
                             <div class="col-md-6">
                                 <label for="formMedico">Médico <span class="text-danger">*</span></label>
-                                <select class="form-select" id="formMedico" 
-                                 name="medico_id" required>
-                                    <option value="">Selecione...</option>
-                                    <?php foreach ($medicos as $m): ?>
-                                        <option value="<?php echo $m['id'] ?>"><?php echo htmlspecialchars($m['nome']) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
+<select class="form-select" id="formMedico" name="medico_id" required>
+    <option value="">Selecione...</option>
+    <?php
+    // Busca os médicos e faz um JOIN com especialidades para pegar o NOME da especialidade
+    $sqlMedicos = "SELECT m.id, m.nome, e.nome as esp_nome 
+                   FROM medicos m 
+                   JOIN especialidades e ON m.especialidade_id = e.id 
+                   WHERE m.status = 'Ativo'";
+    $queryMed = mysqli_query($conexao_bd, $sqlMedicos);
+    
+    while ($m = mysqli_fetch_assoc($queryMed)) {
+        echo '<option value="'.$m['id'].'" 
+                      data-especialidade-nome="'.$m['esp_nome'].'">'.$m['nome'].'</option>';
+    }
+    ?>
+</select>
                             </div>
                             <div class="col-md-6">
-                                <label for="formEspecialidade">Especialidade <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" 
-                                id="formEspecialidade"
-                                       name="especialidade" placeholder="Ex: Cardiologia" required>
-                                <!-- TODO: preencher automaticamente ao selecionar o médico -->
+                                <label for="formEspecialidadeNome">Especialidade <span class="text-danger">*</span></label>
+    
+                                <input type="text" class="form-control" id="formEspecialidadeNome" placeholder="Auto-preenchido" readonly>
+    
+                                <input type="hidden" id="formEspecialidadeId" name="especialidade" required>
                             </div>
                             <div class="col-md-6">
                                 <label for="formData">Data <span class="text-danger">*</span></label>
@@ -761,7 +722,7 @@ $medicos = [
                             <i class="fa-solid fa-floppy-disk me-1"></i> Salvar
                         </button>
                     </div>
-                </form>t
+                </form>
             </div>
         </div>
     </div>
@@ -835,9 +796,9 @@ $medicos = [
                 document.getElementById('formPaciente').value      = btnEditar.dataset.paciente;
                 document.getElementById('formData').value          = btnEditar.dataset.data;
                 document.getElementById('formHorario').value       = btnEditar.dataset.horario;
-                document.getElementById('formEspecialidade').value = btnEditar.dataset.especialidade;
                 document.getElementById('formStatus').value        = btnEditar.dataset.status;
 
+                // Seleciona o médico correto na lista
                 var sel = document.getElementById('formMedico');
                 for (var i = 0; i < sel.options.length; i++) {
                     if (sel.options[i].text === btnEditar.dataset.medico) {
@@ -845,6 +806,11 @@ $medicos = [
                         break;
                     }
                 }
+                
+                // MÁGICA: Dispara o evento de "change" (mudança) do médico
+                // Isso faz o sistema preencher a especialidade (Nome e ID) automaticamente para a edição!
+                sel.dispatchEvent(new Event('change'));
+
                 modalFormAgenda.show();
             }
 
@@ -902,50 +868,7 @@ $medicos = [
                 form.reportValidity();
                 return;
             }
-            /*                            
-            var acao          = document.getElementById('formAcao').value;
-            var id            = document.getElementById('formId').value;
-            var paciente      = document.getElementById('formPaciente').value.trim();
-            var medicoSel     = document.getElementById('formMedico');
-            var medico        = medicoSel.options[medicoSel.selectedIndex].text;
-            var especialidade = document.getElementById('formEspecialidade').value.trim();
-            var dataISO       = document.getElementById('formData').value;
-            var horario       = document.getElementById('formHorario').value;
-            var status        = document.getElementById('formStatus').value;
-            var partes        = dataISO.split('-');
-            var dataFmt       = partes[2] + '/' + partes[1] + '/' + partes[0];
-
-            if (acao === 'editar') {
-                var btnEditar = document.querySelector('.btn-editar[data-id="' + id + '"]');
-                if (btnEditar) {
-                    var tr = btnEditar.closest('tr');
-                    tr.cells[1].textContent = dataFmt;
-                    tr.cells[2].textContent = horario;
-                    tr.cells[3].textContent = paciente;
-                    tr.cells[4].textContent = medico;
-                    tr.cells[5].textContent = especialidade;
-                    tr.cells[6].innerHTML   = '<span class="badge-status ' + getBadgeClassAgenda(status) + '">' + status + '</span>';
-
-                    btnEditar.dataset.paciente      = paciente;
-                    btnEditar.dataset.medico        = medico;
-                    btnEditar.dataset.especialidade = especialidade;
-                    btnEditar.dataset.data          = dataISO;
-                    btnEditar.dataset.horario       = horario;
-                    btnEditar.dataset.status        = status;
-
-                    var btnCancelar = tr.querySelector('.btn-cancelar');
-                    if (btnCancelar) btnCancelar.dataset.paciente = paciente;
-                }
-            } else {
-                var tbody    = document.querySelector('.tabela-agendamentos tbody');
-                var semDados = tbody.querySelector('td[colspan]');
-                if (semDados) semDados.closest('tr').remove();
-
-                var novoId = 'tmp-' + Date.now();
-                tbody.appendChild(criarLinhaAgendamento(novoId, dataFmt, horario, paciente, medico, especialidade, status, dataISO));
-                atualizarContadorAgenda();
-            }
-            */
+            
             modalFormAgenda.hide();
             Swal.fire({
                 icon: 'success',
@@ -1032,6 +955,22 @@ $medicos = [
             var el = document.getElementById('contadorRegistros');
             if (el) el.textContent = total + ' registro(s) encontrado(s)';
         }
+
+        // ==================================================
+        // PREENCHER ESPECIALIDADE AUTOMATICAMENTE
+        // ==================================================
+        document.getElementById('formMedico').addEventListener('change', function() {
+            // Se estivermos a editar, não queremos que o change force uma especialidade errada
+            if (modoEdicao) {
+                return; 
+            }
+
+            var opcaoSelecionada = this.options[this.selectedIndex];
+            var espNome = opcaoSelecionada.getAttribute('data-especialidade-nome');
+            
+            document.getElementById('formEspecialidadeNome').value = espNome || '';
+            document.getElementById('formEspecialidadeId').value = espNome || '';
+        });
     </script>
 </body>
 </html>
